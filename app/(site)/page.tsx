@@ -11,11 +11,12 @@ import Link from "next/link";
 
 export default async function Home() {
     /* if not logged in, redirect to login */
-    const supabase = createClient();
-    const session = await supabase.auth.getUser();
-    if (!session) {
-        redirect("/auth/login");
-    }
+    const supabase = await createClient();
+
+    // You can also use getUser() which will be slower.
+    const { data } = await supabase.auth.getClaims();
+
+    const user = data?.claims;
 
     return (
         <main className="min-h-screen flex flex-col items-center">

@@ -20,8 +20,10 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en" suppressHydrationWarning>
-            <body className={`${geistSans.className} antialiased`}>
+        <html lang="fr" className="h-full" suppressHydrationWarning>
+            <body
+                className={`${geistSans.variable} antialiased font-sans min-h-screen`}
+            >
                 <ThemeProvider
                     attribute="class"
                     defaultTheme="system"

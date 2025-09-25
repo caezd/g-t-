@@ -53,6 +53,10 @@ export async function updateSession(request: NextRequest) {
     // IMPORTANT: If you remove getClaims() and you use server-side rendering
     // with the Supabase client, your users may be randomly logged out.
     const { data } = await supabase.auth.getClaims();
+    if (!data) {
+        const absoluteURL = new URL("/auth/login", request.nextUrl.origin);
+        return NextResponse.redirect(absoluteURL.toString());
+    }
     const {
         data: { user },
     } = await supabase.auth.getUser();
@@ -61,7 +65,7 @@ export async function updateSession(request: NextRequest) {
     if (PUBLIC_PATHS.some((p) => pathname.startsWith(p)))
         return NextResponse.next();
 
-    const isAdmin = await checkIfUserIsAdmin(user?.id ?? "", supabase);
+    const isAdmin = await checkIfUserIsAdmin(user?.id || "", supabase);
 
     if (isProtected && !isAdmin) {
         const absoluteURL = new URL("/", request.nextUrl.origin);

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { RootProvider } from "fumadocs-ui/provider/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,7 +23,8 @@ export default function RootLayout({
     return (
         <html lang="fr" className="h-full" suppressHydrationWarning>
             <body
-                className={`${geistSans.variable} antialiased font-sans min-h-screen`}
+                suppressHydrationWarning
+                className={`${geistSans.variable} antialiased font-sans min-h-screen dark:bg-zinc-950 bg-zinc-50`}
             >
                 <ThemeProvider
                     attribute="class"
@@ -30,7 +32,7 @@ export default function RootLayout({
                     enableSystem
                     disableTransitionOnChange
                 >
-                    {children}
+                    <RootProvider>{children}</RootProvider>
                 </ThemeProvider>
             </body>
         </html>

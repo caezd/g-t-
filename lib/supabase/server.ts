@@ -64,3 +64,12 @@ export async function checkIfUserIsAdmin(userId: string, supabase: any) {
         return false;
     }
 }
+
+export async function getSession() {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getClaims();
+
+    const session = data?.claims;
+
+    return { supabase, session };
+}

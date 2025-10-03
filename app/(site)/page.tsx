@@ -1,61 +1,90 @@
-import { EnvVarWarning } from "@/components/env-var-warning";
-import { AuthButton } from "@/components/auth-button";
-import { Hero } from "@/components/hero";
+import { TimeEntryForm } from "@/components/forms/TimeEntryForm";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { ConnectSupabaseSteps } from "@/components/tutorial/connect-supabase-steps";
-import { SignUpUserSteps } from "@/components/tutorial/sign-up-user-steps";
-import { hasEnvVars } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import { redirect } from "next/navigation";
-import Link from "next/link";
 
-export default async function Home() {
-    /* if not logged in, redirect to login */
-    const supabase = await createClient();
+import { cn } from "@/lib/utils";
 
-    // You can also use getUser() which will be slower.
-    const { data } = await supabase.auth.getClaims();
+import { getDateWeek, weekRange } from "@/utils/date";
 
-    const user = data?.claims;
-
+export default async function HomePage() {
+    const stats = [
+        {
+            label: `Du ${weekRange(new Date()).first.getDate()} au`,
+            amount: `${weekRange(new Date()).last.getDate()} ${weekRange(
+                new Date()
+            ).last.toLocaleString("default", { month: "short" })}`,
+        },
+        {
+            label: "Heures facturées",
+            amount: 32.5,
+            unit: "hrs",
+        },
+        {
+            label: "Banque disponible",
+            amount: 40 - 7.5,
+            unit: "hrs",
+            conditionalStyle: {
+                positive: "dark:text-green-400 text-green-500",
+                negative: "dark:text-red-400 text-red-500",
+            },
+        },
+    ];
     return (
-        <main className="min-h-screen flex flex-col items-center">
-            <div className="flex-1 w-full flex flex-col gap-20 items-center">
-                <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16">
-                    <div className="w-full max-w-5xl flex justify-between items-center p-3 px-5 text-sm">
-                        <div className="flex gap-5 items-center font-semibold">
-                            <Link href={"/"}>Next.js Supabase Starter</Link>
-                        </div>
-                        {!hasEnvVars ? <EnvVarWarning /> : <AuthButton />}
-                    </div>
-                </nav>
-                <div className="flex-1 flex flex-col gap-20 max-w-5xl p-5">
-                    <Hero />
-                    <main className="flex-1 flex flex-col gap-6 px-4">
-                        <h2 className="font-medium text-xl mb-4">Next steps</h2>
-                        {hasEnvVars ? (
-                            <SignUpUserSteps />
-                        ) : (
-                            <ConnectSupabaseSteps />
-                        )}
-                    </main>
-                </div>
-
-                <footer className="w-full flex items-center justify-center border-t mx-auto text-center text-xs gap-8 py-16">
-                    <p>
-                        Powered by{" "}
-                        <a
-                            href="https://supabase.com/?utm_source=create-next-app&utm_medium=template&utm_term=nextjs"
-                            target="_blank"
-                            className="font-bold hover:underline"
-                            rel="noreferrer"
+        <>
+            <main className="lg:pr-96">
+                <div className="dark:bg-zinc-700/10 bg-zinc-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+                    {stats.map((item, i) => (
+                        <div
+                            className={cn(
+                                "border-zinc-200 dark:border-zinc-800 px-4 py-6 sm:px-6 lg:px-8",
+                                i > 0 && "sm:border-l"
+                            )}
+                            key={i}
                         >
-                            Supabase
-                        </a>
-                    </p>
-                    <ThemeSwitcher />
-                </footer>
-            </div>
-        </main>
+                            <p
+                                className={
+                                    "text-sm font-medium leading-6 dark:text-zinc-400"
+                                }
+                            >
+                                {item.label}
+                            </p>
+                            <p className={"mt-2 flex items-baseline gap-x-2"}>
+                                <span
+                                    className={cn(
+                                        "dark:text-white text-4xl font-semibold -tracking-tight whitespace-nowrap",
+                                        item.conditionalStyle &&
+                                            (item.amount >= 0
+                                                ? item.conditionalStyle
+                                                      ?.positive
+                                                : item.conditionalStyle
+                                                      ?.negative)
+                                    )}
+                                >
+                                    {item.amount}
+                                </span>
+                                {item.unit && (
+                                    <span
+                                        className={cn(
+                                            "text-sm dark:text-zinc-400",
+                                            item.conditionalStyle &&
+                                                (item.amount >= 0
+                                                    ? item.conditionalStyle
+                                                          ?.positive
+                                                    : item.conditionalStyle
+                                                          ?.negative)
+                                        )}
+                                    >
+                                        {item.unit}
+                                    </span>
+                                )}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+                <div className="border-t border-zinc-200 dark:border-zinc-800 flex px-4 py-4 sm:px-6 lg:px-8">
+                    <TimeEntryForm />
+                </div>
+            </main>
+            <aside className="lg:fixed lg:bottom-0 lg:right-0 lg:top-16 lg:w-96 lg:overflow-y-auto lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800"></aside>
+        </>
     );
 }

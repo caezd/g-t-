@@ -1,14 +1,57 @@
-import Link from "next/link";
-import { cookies } from "next/headers";
+"use client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { redirect } from "next/navigation";
 
-export default async function SetPassword({
-    searchParams,
-}: {
-    searchParams: { message: string };
-}) {
-    const supabase = createClient();
+export default function SetPassword() {
+    const [ready, setReady] = useState(false);
+    const [pw, setPw] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [ok, setOk] = useState(false);
+    const router = useRouter();
+
+    useEffect(() => {
+        (async () => {
+            const supa = await createClient();
+
+            // 1) Si on arrive avec tokens dans le hash: les “installer” comme session
+            if (typeof window !== "undefined" && window.location.hash) {
+                const params = new URLSearchParams(
+                    window.location.hash.slice(1)
+                );
+                const access_token = params.get("access_token");
+                const refresh_token = params.get("refresh_token");
+
+                if (access_token && refresh_token) {
+                    const { error } = await supa.auth.setSession({
+                        access_token,
+                        refresh_token,
+                    });
+                    if (error) {
+                        console.error(error);
+                        router.replace("/login?reason=set-session-failed");
+                        return;
+                    }
+                    // Nettoie l’URL (enlève les tokens)
+                    window.history.replaceState(
+                        {},
+                        document.title,
+                        window.location.pathname
+                    );
+                }
+            }
+
+            // 2) Vérifie la session (maintenant côté client/localStorage)
+            const { data } = await supa.auth.getSession();
+            if (!data.session) {
+                router.replace("/login?reason=no-session");
+                return;
+            }
+            setReady(true);
+        })();
+    }, [router]);
+
+    /* const supabase = createClient();
 
     const {
         data: { user },
@@ -33,32 +76,11 @@ export default async function SetPassword({
         }
 
         return redirect("/");
-    };
+    }; */
 
     return (
         <div className="flex-1 flex flex-col w-full px-8 sm:max-w-md justify-center gap-2">
-            <Link
-                href="/"
-                className="absolute left-8 top-4 py-2 px-4 rounded-md no-underline text-foreground bg-btn-background hover:bg-btn-background-hover flex items-center group text-sm"
-            >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1"
-                >
-                    <polyline points="15 18 9 12 15 6" />
-                </svg>{" "}
-                Back
-            </Link>
-
-            {user ? (
+            {/* {user ? (
                 <form
                     className="animate-in flex-1 flex flex-col w-full justify-center gap-2 text-foreground"
                     action={setPassword}
@@ -104,7 +126,7 @@ export default async function SetPassword({
                         If you do not have an account, contact .
                     </p>
                 </div>
-            )}
+            )} */}
         </div>
     );
 }

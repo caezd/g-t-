@@ -17,9 +17,10 @@ export async function GET(request: NextRequest) {
             token_hash,
         });
         if (!error) {
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
+            const { data, error: userErr } = await supabase.auth.getClaims();
+            const user = data?.claims;
+
+            console.log(user);
 
             if (user && !user.user_metadata.password_set) {
                 // Rediriger vers set-password si c'est une invitation

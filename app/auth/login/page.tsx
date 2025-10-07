@@ -4,11 +4,9 @@ import { redirect } from "next/navigation";
 
 export default async function Page() {
     const supabase = createClient();
-    const session = await supabase.auth.getUser();
+    const { data } = await supabase.auth.getClaims();
+    const user = data?.claims;
 
-    if (session) {
-        redirect("/");
-    }
     return (
         <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
             <div className="w-full max-w-sm">

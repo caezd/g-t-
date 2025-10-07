@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import Link from "next/link";
 
 const Header = async () => {
     const supabase = await createClient();
@@ -65,9 +66,11 @@ const Header = async () => {
                                     <KeyRound />
                                     Mot de passe
                                 </DropdownMenuItem>
-                                <DropdownMenuItem>
-                                    <LogOut /> Se déconnecter
-                                </DropdownMenuItem>
+                                <Link href="/auth/logout">
+                                    <DropdownMenuItem>
+                                        <LogOut /> Se déconnecter
+                                    </DropdownMenuItem>
+                                </Link>
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>

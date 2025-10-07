@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import {
     createAdminClient,
     createClient,
@@ -39,11 +38,10 @@ export async function POST(req: Request) {
         const admin = createAdminClient();
 
         /* TODO: vérifier que l'user n'existe pas ? */
-        const inviteLink = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm?token_hash=${token_hash}&type=invite&next=/set-password`;
         const { data: invited, error: invErr } =
             await admin.auth.admin.inviteUserByEmail(email, {
                 data: { ...metadata, invited_via: "admin" },
-                redirectTo: inviteLink,
+                redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/set-password`,
             });
 
         if (invErr)

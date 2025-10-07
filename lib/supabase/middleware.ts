@@ -1,8 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
+import path from "path";
 
-const PUBLIC_PATHS = ["/auth/login", "/auth/callback"];
+const PUBLIC_PATHS = [
+    "/set-password",
+    "/auth/login",
+    "/auth/sign-up",
+    "/auth/callback",
+];
 
 const protectedRoutes = ["/admin"];
 
@@ -21,8 +27,6 @@ export async function updateSession(request: NextRequest) {
         return supabaseResponse;
     }
 
-    // With Fluid compute, don't put this client in a global environment
-    // variable. Always create a new one on each request.
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY!,
@@ -53,27 +57,22 @@ export async function updateSession(request: NextRequest) {
     // IMPORTANT: If you remove getClaims() and you use server-side rendering
     // with the Supabase client, your users may be randomly logged out.
     const { data } = await supabase.auth.getClaims();
-    if (!data) {
+    const { pathname } = request.nextUrl;
+    const user = data?.claims;
+
+    if (
+        !user &&
+        pathname !== "/auth/login" &&
+        !PUBLIC_PATHS.includes(pathname)
+    ) {
         const absoluteURL = new URL("/auth/login", request.nextUrl.origin);
         return NextResponse.redirect(absoluteURL.toString());
     }
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
 
-    const { pathname } = request.nextUrl;
-    if (PUBLIC_PATHS.some((p) => pathname.startsWith(p)))
-        return NextResponse.next();
-
-    const isAdmin = await checkIfUserIsAdmin(user?.id || "", supabase);
+    const isAdmin = await checkIfUserIsAdmin(user?.sub || "", supabase);
 
     if (isProtected && !isAdmin) {
         const absoluteURL = new URL("/", request.nextUrl.origin);
-        return NextResponse.redirect(absoluteURL.toString());
-    }
-
-    if (!user && request.nextUrl.pathname !== "/auth/login") {
-        const absoluteURL = new URL("/auth/login", request.nextUrl.origin);
         return NextResponse.redirect(absoluteURL.toString());
     }
 

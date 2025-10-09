@@ -27,3 +27,43 @@ export const weekRange = (date) => {
         last: new Date(curr.setDate(last)),
     };
 };
+
+export function toHoursDecimal(input) {
+    if (input == null || input === "") return undefined;
+    if (typeof input === "number" && !Number.isNaN(input)) return input;
+
+    const raw = String(input).trim().toLowerCase();
+
+    // Normaliser la virgule décimale -> point
+    const s = raw.replace(",", ".");
+
+    // cas "1.5h" ou "1.5" (heures décimales)
+    let m = s.match(/^(-?\d+(?:\.\d+)?)\s*h?$/);
+    if (m) return Number(m[1]);
+
+    // cas "1h30" (ou "2h05")
+    m = s.match(/^(-?\d+)\s*h\s*(\d{1,2})$/);
+    if (m) {
+        const h = Number(m[1]);
+        const minutes = Number(m[2]);
+        return h + minutes / 60;
+    }
+
+    // cas "1:30"
+    m = s.match(/^(-?\d+)\s*:\s*(\d{1,2})$/);
+    if (m) {
+        const h = Number(m[1]);
+        const minutes = Number(m[2]);
+        return h + minutes / 60;
+    }
+
+    // cas "90m", "45 min", "30mins"
+    m = s.match(/^(-?\d+(?:\.\d+)?)\s*m(?:in(?:s)?)?$/);
+    if (m) {
+        const minutes = Number(m[1]);
+        return minutes / 60;
+    }
+
+    // Rien de reconnu
+    return undefined;
+}

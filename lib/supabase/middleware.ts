@@ -4,10 +4,13 @@ import { hasEnvVars } from "../utils";
 import path from "path";
 
 const PUBLIC_PATHS = [
-    "/set-password",
+    "/auth/set-password",
     "/auth/login",
     "/auth/sign-up",
     "/auth/callback",
+    "/auth/error",
+    "/auth/forgot-password",
+    "/auth/update-password",
 ];
 
 const protectedRoutes = ["/admin"];

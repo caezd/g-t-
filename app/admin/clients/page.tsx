@@ -48,6 +48,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray } from "react-hook-form";
 import { EditClientDialog } from "@/components/admin/clients/EditClientDialog";
 
+import Link from "next/link";
+
 const MandateSelectionSchema = z.object({
     id: z.number().optional(), // id pivot si existant
     mandat_type_id: z.number(),
@@ -133,7 +135,7 @@ const NewClientDialog = ({ onCreated }) => {
 
         // 2) Insérer les liaisons enrichies (table pivot)
         const rows = values.mandates.map((m) => ({
-            id: client.id,
+            client_id: client.id,
             mandat_type_id: m.mandat_type_id,
             billing_type: m.billing_type, // enum supabase
             amount: m.amount,
@@ -404,7 +406,7 @@ async function softDeleteClient(
     const { error: e2 } = await supabase
         .from("clients_mandats")
         .update({ deleted_at: now })
-        .eq("id", clientId)
+        .eq("client_id", clientId)
         .is("deleted_at", null);
     if (e2) throw e2;
 }
@@ -473,100 +475,111 @@ const ClientPage = () => {
                             </thead>
                             <tbody>
                                 {clients &&
-                                    clients.map((client) => (
-                                        <tr key={client.id}>
-                                            <td className="py-4 pr-3 pl-4 text-sm sm:pl-0 ">
-                                                {client.name}
-                                            </td>
-                                            <td className="py-4 pr-3 pl-4 text-sm sm:pl-0 ">
-                                                {client.clients_mandats.count}
-                                            </td>
-                                            <td className="py-4 pr-3 pl-4 text-sm sm:pl-0">
-                                                {new Date(
-                                                    client.created_at
-                                                ).toLocaleDateString()}
-                                            </td>
-                                            <td>
-                                                <EditClientDialog
-                                                    clientId={client.id}
-                                                    initialName={client.name}
-                                                    onUpdated={(patch) =>
-                                                        setClients((prev) =>
-                                                            prev.map((x) =>
-                                                                x.id ===
-                                                                client.id
-                                                                    ? {
-                                                                          ...x,
-                                                                          ...patch,
-                                                                      }
-                                                                    : x
-                                                            )
-                                                        )
+                                    clients
+                                        .sort((a, b) =>
+                                            a.name.localeCompare(b.name)
+                                        )
+                                        .map((client) => (
+                                            <tr key={client.id}>
+                                                <td className="py-4 pr-3 pl-4 text-sm sm:pl-0 ">
+                                                    <Link
+                                                        href={`/admin/clients/${client.id}`}
+                                                    >
+                                                        {client.name}
+                                                    </Link>
+                                                </td>
+                                                <td className="py-4 pr-3 pl-4 text-sm sm:pl-0 ">
+                                                    {
+                                                        client.clients_mandats
+                                                            .count
                                                     }
-                                                />
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button
-                                                            variant="destructive"
-                                                            size="sm"
+                                                </td>
+                                                <td className="py-4 pr-3 pl-4 text-sm sm:pl-0">
+                                                    {new Date(
+                                                        client.created_at
+                                                    ).toLocaleDateString()}
+                                                </td>
+                                                <td>
+                                                    <EditClientDialog
+                                                        clientId={client.id}
+                                                        initialName={
+                                                            client.name
+                                                        }
+                                                        onUpdated={(patch) =>
+                                                            setClients((prev) =>
+                                                                prev.map((x) =>
+                                                                    x.id ===
+                                                                    client.id
+                                                                        ? {
+                                                                              ...x,
+                                                                              ...patch,
+                                                                          }
+                                                                        : x
+                                                                )
+                                                            )
+                                                        }
+                                                    />
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger
+                                                            asChild
                                                         >
-                                                            Supprimer
-                                                        </Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle>
-                                                                Supprimer ce
-                                                                client ?
-                                                            </AlertDialogTitle>
-                                                            <AlertDialogDescription>
-                                                                Le client sera
-                                                                masqué (soft
-                                                                delete). Tu
-                                                                pourras le
-                                                                restaurer plus
-                                                                tard.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>
-                                                                Annuler
-                                                            </AlertDialogCancel>
-                                                            <AlertDialogAction
-                                                                onClick={async () => {
-                                                                    try {
-                                                                        await softDeleteClient(
-                                                                            supabase,
-                                                                            client.id
-                                                                        );
-                                                                        // retire de la liste locale
-                                                                        setClients(
-                                                                            (
-                                                                                prev
-                                                                            ) =>
-                                                                                prev.filter(
-                                                                                    (
-                                                                                        c
-                                                                                    ) =>
-                                                                                        c.id !==
-                                                                                        client.id
-                                                                                )
-                                                                        );
-                                                                    } catch (e) {
-                                                                        console.error(
-                                                                            e
-                                                                        );
-                                                                    }
-                                                                }}
+                                                            <Button
+                                                                variant="destructive"
+                                                                size="sm"
                                                             >
-                                                                Confirmer
-                                                            </AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                                Supprimer
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>
+                                                                    Supprimer ce
+                                                                    client ?
+                                                                </AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    Le client
+                                                                    sera masqué.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>
+                                                                    Annuler
+                                                                </AlertDialogCancel>
+                                                                <AlertDialogAction
+                                                                    onClick={async () => {
+                                                                        try {
+                                                                            await softDeleteClient(
+                                                                                supabase,
+                                                                                client.id
+                                                                            );
+                                                                            // retire de la liste locale
+                                                                            setClients(
+                                                                                (
+                                                                                    prev
+                                                                                ) =>
+                                                                                    prev.filter(
+                                                                                        (
+                                                                                            c
+                                                                                        ) =>
+                                                                                            c.id !==
+                                                                                            client.id
+                                                                                    )
+                                                                            );
+                                                                        } catch (e) {
+                                                                            console.error(
+                                                                                e
+                                                                            );
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    Confirmer
+                                                                </AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </td>
+                                            </tr>
+                                        ))}
                             </tbody>
                         </table>
                     </section>

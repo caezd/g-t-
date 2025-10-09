@@ -20,11 +20,9 @@ export async function GET(request: NextRequest) {
             const { data, error: userErr } = await supabase.auth.getClaims();
             const user = data?.claims;
 
-            console.log(user);
-
-            if (user && !user.user_metadata.password_set) {
+            if (user) {
                 // Rediriger vers set-password si c'est une invitation
-                redirect("/set-password");
+                redirect("/auth/set-password");
             }
 
             redirect(next);

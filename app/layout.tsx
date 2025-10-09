@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { RootProvider } from "fumadocs-ui/provider/next";
+import { Toaster } from "@/components/ui/sonner";
+
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,7 +34,10 @@ export default function RootLayout({
                     enableSystem
                     disableTransitionOnChange
                 >
-                    <RootProvider>{children}</RootProvider>
+                    <RootProvider>
+                        {children}
+                        <Toaster />
+                    </RootProvider>
                 </ThemeProvider>
             </body>
         </html>

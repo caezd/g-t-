@@ -6,7 +6,7 @@ import Link from "next/link";
 import AppLogo from "@/components/app-logo";
 
 import {
-    CalendarPlus,
+    FolderCheck,
     FolderClosed,
     Radio,
     Settings,
@@ -20,7 +20,7 @@ const links = [
     { name: "Activité", href: "/admin/activities", icon: Radio },
     { name: "Employés", href: "/admin/employees", icon: Users },
     { name: "Clients", href: "/admin/clients", icon: FolderClosed },
-    { name: "Mandats", href: "/admin/mandates", icon: CalendarPlus },
+    { name: "Services", href: "/admin/services", icon: FolderCheck },
     { name: "Paramètres", href: "/admin/settings", icon: Settings },
 ];
 
@@ -51,7 +51,7 @@ const NavLink = ({ name, href, Icon }) => {
 const AdminAside = () => {
     return (
         <aside className="hidden xl:flex xl:w-72 xl:z-50 xl:inset-y-0 xl:fixed xl:flex-col">
-            <div className="flex flex-col grow gap-y-5 overflow-y-auto bg-yellow-500 dark:bg-yellow-700">
+            <div className="flex flex-col grow gap-y-5 overflow-y-auto bg-yellow-500 dark:bg-yellow-500/90">
                 <header className="flex h-16 shrink-0 gap-6 items-center px-6 text-zinc-50">
                     <AppLogo
                         width={32}

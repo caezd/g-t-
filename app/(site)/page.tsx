@@ -1,11 +1,36 @@
+"use client";
+import { useEffect, useState } from "react";
 import { TimeEntryForm } from "@/components/forms/TimeEntryForm";
-import { ThemeSwitcher } from "@/components/theme-switcher";
+import { createClient } from "@/lib/supabase/client";
 
 import { cn } from "@/lib/utils";
 
 import { getDateWeek, weekRange } from "@/utils/date";
 
-export default async function HomePage() {
+export default function HomePage() {
+    const supabase = createClient();
+    const [entries, setEntries] = useState([]);
+
+    useEffect(() => {
+        async function fetchEntries() {
+            const { data, error } = await supabase
+                .from("time_entries")
+                .select("*")
+                .eq(
+                    "profile_id",
+                    supabase.auth
+                        .getUser()
+                        .then(({ data: { user } }) => user?.id)
+                )
+                .order("doc", { ascending: false })
+                .limit(100);
+            if (!error) {
+                setEntries(data || []);
+            }
+        }
+        fetchEntries();
+    }, [entries, supabase]);
+
     const stats = [
         {
             label: `Du ${weekRange(new Date()).first.getDate()} au`,
@@ -32,25 +57,34 @@ export default async function HomePage() {
         <>
             <main className="lg:pr-96">
                 <div className="dark:bg-zinc-700/10 bg-zinc-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                    {stats.map((item, i) => (
-                        <div
-                            className={cn(
-                                "border-zinc-200 dark:border-zinc-800 px-4 py-6 sm:px-6 lg:px-8",
-                                i > 0 && "sm:border-l"
-                            )}
-                            key={i}
+                    {/* <div
+                        className={cn(
+                            "border-zinc-200 dark:border-zinc-800 px-4 py-6 sm:px-6 lg:px-8"
+                        )}
+                    >
+                        <p
+                            className={
+                                "text-sm font-medium leading-6 dark:text-zinc-400"
+                            }
                         >
-                            <p
-                                className={
-                                    "text-sm font-medium leading-6 dark:text-zinc-400"
-                                }
+                            {item.label}
+                        </p>
+                        <p className={"mt-2 flex items-baseline gap-x-2"}>
+                            <span
+                                className={cn(
+                                    "dark:text-white text-4xl font-semibold -tracking-tight whitespace-nowrap",
+                                    item.conditionalStyle &&
+                                        (item.amount >= 0
+                                            ? item.conditionalStyle?.positive
+                                            : item.conditionalStyle?.negative)
+                                )}
                             >
-                                {item.label}
-                            </p>
-                            <p className={"mt-2 flex items-baseline gap-x-2"}>
+                                {item.amount}
+                            </span>
+                            {item.unit && (
                                 <span
                                     className={cn(
-                                        "dark:text-white text-4xl font-semibold -tracking-tight whitespace-nowrap",
+                                        "text-sm dark:text-zinc-400",
                                         item.conditionalStyle &&
                                             (item.amount >= 0
                                                 ? item.conditionalStyle
@@ -59,26 +93,11 @@ export default async function HomePage() {
                                                       ?.negative)
                                     )}
                                 >
-                                    {item.amount}
+                                    {item.unit}
                                 </span>
-                                {item.unit && (
-                                    <span
-                                        className={cn(
-                                            "text-sm dark:text-zinc-400",
-                                            item.conditionalStyle &&
-                                                (item.amount >= 0
-                                                    ? item.conditionalStyle
-                                                          ?.positive
-                                                    : item.conditionalStyle
-                                                          ?.negative)
-                                        )}
-                                    >
-                                        {item.unit}
-                                    </span>
-                                )}
-                            </p>
-                        </div>
-                    ))}
+                            )}
+                        </p>
+                    </div> */}
                 </div>
                 <div className="border-t border-zinc-200 dark:border-zinc-800 flex px-4 py-4 sm:px-6 lg:px-8">
                     <TimeEntryForm />

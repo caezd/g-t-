@@ -100,11 +100,11 @@ const formSchema = z.object({
     service_id: z.coerce.number({
         required_error: "Un service est obligatoire.",
     }),
-    mandat_id: z.coerce.number({
-        required_error: "Un mandat est obligatoire.",
-    }),
+    mandat_id: z.number().nullable(), // << autorise null
     details: z.string().optional().default(""),
+    internal: z.boolean().default(false), // << ajoute le champ interne au schéma
 });
+
 const INTERNAL_CLIENT = {
     value: 0,
     label: "Focus TDL / Interne",
@@ -311,7 +311,7 @@ function MandatePickerRow({ form }) {
                                     );
                                 }}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger className="w-full">
                                     <SelectValue
                                         placeholder={
                                             loading
@@ -326,7 +326,7 @@ function MandatePickerRow({ form }) {
                                         }
                                     />
                                 </SelectTrigger>
-                                <SelectContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                                <SelectContent>
                                     {mandates.map((m) => (
                                         <SelectItem
                                             key={m.id}
@@ -477,16 +477,12 @@ export function TimeEntryForm({ onCreated }) {
                     profile_id,
                 },
             ])
-            .select(
-                "*, client:clients!inner(*), mandat:clients_mandats!inner(*, mandat_types!inner(*)), clients_services!inner(*)"
-            )
+            .select()
             .single();
         if (error) {
-            console.log(values);
             console.error(error);
             return;
         }
-        console.log("Inserted time entry:", data);
         form.reset();
         onCreated(data);
     }
@@ -594,7 +590,7 @@ export function TimeEntryForm({ onCreated }) {
                         )}
                     />
                 </div>
-                <Button type="submit">Submit</Button>
+                <Button type="submit">Envoyer</Button>
             </form>
         </Form>
     );

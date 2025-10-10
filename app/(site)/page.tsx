@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { TimeEntryForm } from "@/components/forms/TimeEntryForm";
 import { createClient } from "@/lib/supabase/client";
 
@@ -7,6 +7,45 @@ import { cn } from "@/lib/utils";
 
 import { getDateWeek, weekRange, FormatDecimalsToHours } from "@/utils/date";
 import { DollarSign, Handshake } from "lucide-react";
+
+function startOfWeekSunday(date: Date) {
+    const d = new Date(date);
+    const day = d.getDay(); // 0 = dimanche
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - day);
+    return d;
+}
+function endOfWeekSaturday(date: Date) {
+    const start = startOfWeekSunday(date);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return end;
+}
+function groupEntriesByWeek(entries: any[]) {
+    const map = new Map<
+        string,
+        { start: Date; end: Date; items: any[]; total: number }
+    >();
+    for (const e of entries) {
+        const doc = new Date(e.doc);
+        const start = startOfWeekSunday(doc);
+        const end = endOfWeekSaturday(doc);
+        const key = start.toISOString().slice(0, 10); // yyyy-mm-dd du dimanche
+        const billed =
+            typeof e.billed_amount === "number"
+                ? e.billed_amount
+                : parseFloat(e.billed_amount ?? "0");
+        if (!map.has(key)) map.set(key, { start, end, items: [], total: 0 });
+        const g = map.get(key)!;
+        g.items.push(e);
+        g.total += billed || 0;
+    }
+    // ordonner par semaine la plus récente en premier
+    return [...map.values()].sort(
+        (a, b) => b.start.getTime() - a.start.getTime()
+    );
+}
 
 function IconByAbbreviation(abbr) {
     switch (abbr) {
@@ -24,7 +63,7 @@ function IconByAbbreviation(abbr) {
 function TimeEntry({ index, entries }) {
     const [entry, setEntry] = useState(entries[index]);
     const { details, doc, client, mandat } = entry;
-    console.log(entry);
+
     return (
         <li className="relative flex gap-x-4">
             <div
@@ -37,15 +76,15 @@ function TimeEntry({ index, entries }) {
             </div>
             <div
                 className={cn(
-                    "relative flex size-6 flex-none items-center justify-center bg-zinc-50 dark:bg-zinc-950"
+                    "relative flex size-6 flex-none items-center justify-center bg-zinc-50 dark:bg-zinc-950",
+                    details && "mt-3"
                 )}
             >
                 <div
                     className={cn(
                         !mandat &&
                             "size-2 bg-zinc-300 dark:bg-zinc-800 rounded-full ring-1 ring-zinc-400 dark:ring-zinc-800",
-                        mandat && "size-6 bg-accent-400 rounded-full flex ",
-                        details && "mt-6"
+                        mandat && "size-6 bg-accent-400 rounded-full flex "
                     )}
                 >
                     {mandat && mandat.mandat_types && (
@@ -104,6 +143,8 @@ export default function HomePage() {
     const supabase = createClient();
     const [entries, setEntries] = useState([]);
 
+    const grouped = useMemo(() => groupEntriesByWeek(entries), [entries]);
+
     useEffect(() => {
         async function fetchEntries() {
             const {
@@ -112,7 +153,7 @@ export default function HomePage() {
             const { data, error } = await supabase
                 .from("time_entries")
                 .select(
-                    "*, client:clients!inner(*), mandat:clients_mandats!inner(*, mandat_types!inner(*)), clients_services!inner(*)"
+                    "*, client:clients!inner(*), mandat:clients_mandats(*, mandat_types!inner(*)), clients_services!inner(*)"
                 )
                 .eq("profile_id", user.id)
                 .order("doc", { ascending: false })
@@ -199,12 +240,37 @@ export default function HomePage() {
                 <TimeEntryForm onCreated={handleEntryCreated} />
             </div>
             <aside className="flex-1 lg:w-96 lg:overflow-y-auto lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 py-12">
-                <div className="max-w-lg px-6 mx-auto">
-                    <ul className="space-y-6">
-                        {entries.map((entry, i) => (
-                            <TimeEntry key={i} index={i} entries={entries} />
-                        ))}
-                    </ul>
+                <div className="max-w-lg px-6 mx-auto space-y-10">
+                    {grouped.map((g, gi) => (
+                        <section key={gi}>
+                            <header className="mb-3">
+                                <div className="text-xs uppercase tracking-wide text-zinc-500">
+                                    Semaine du{" "}
+                                    {g.start.toLocaleDateString("fr-CA", {
+                                        day: "2-digit",
+                                        month: "short",
+                                    })}{" "}
+                                    au{" "}
+                                    {g.end.toLocaleDateString("fr-CA", {
+                                        day: "2-digit",
+                                        month: "short",
+                                    })}
+                                </div>
+                                <div className="text-sm text-zinc-700 dark:text-zinc-300">
+                                    Total: {FormatDecimalsToHours(g.total)}
+                                </div>
+                            </header>
+                            <ul className="space-y-6">
+                                {g.items.map((entry, i) => (
+                                    <TimeEntry
+                                        key={entry.id ?? i}
+                                        index={i}
+                                        entries={g.items}
+                                    />
+                                ))}
+                            </ul>
+                        </section>
+                    ))}
                 </div>
             </aside>
         </>

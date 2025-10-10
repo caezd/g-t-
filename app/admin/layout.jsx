@@ -9,11 +9,11 @@ export const metadata = {
 
 export default function AdminLayout({ children }) {
     return (
-        <section className="relative flex min-h-svh flex-1 flex-col">
+        <section className="relative flex min-h-screen flex-1">
             <AdminAside />
-            <div className="xl:pl-72">
+            <div className="flex flex-1 flex-col">
                 <Header />
-                <main>{children}</main>
+                <main className="flex-1">{children}</main>
             </div>
         </section>
     );

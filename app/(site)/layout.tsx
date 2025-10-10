@@ -13,11 +13,11 @@ const HomeLayout = async ({ children }: { children: React.ReactNode }) => {
     const is_admin = await isAdmin(user?.sub, supabase);
 
     return (
-        <section className="relative flex min-h-svh flex-1 flex-col ">
+        <section className="relative flex min-h-screen flex-1">
             {is_admin && <AdminAside />}
-            <div className={is_admin ? "xl:pl-72" : ""}>
+            <div className="flex flex-col flex-1">
                 <Header />
-                {children}
+                <main className="flex flex-1">{children}</main>
             </div>
         </section>
     );

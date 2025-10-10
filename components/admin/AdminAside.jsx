@@ -31,14 +31,14 @@ const NavLink = ({ name, href, Icon }) => {
 
     const classes = cn(
         isActive &&
-            "bg-zinc-100 text-yellow-500 dark:bg-zinc-950 dark:text-yellow-400 pointer-events-none"
+            "bg-zinc-100 text-accent-400 bg-white/80 dark:text-accent-400 pointer-events-none"
     );
     return (
         <Link
             href={href}
             key={name.toLowerCase()}
             className={cn(
-                "flex gap-x-3 p-2 text-sm font-semibold leading-6 dark:text-zinc-400 text-zinc-800 rounded-md hover:bg-yellow-400 dark:hover:bg-yellow-800",
+                "flex gap-x-3 p-2 text-sm font-semibold leading-6 text-zinc-100 rounded-md hover:bg-black/20",
                 classes
             )}
         >
@@ -50,8 +50,8 @@ const NavLink = ({ name, href, Icon }) => {
 
 const AdminAside = () => {
     return (
-        <aside className="hidden xl:flex xl:w-72 xl:z-50 xl:inset-y-0 xl:fixed xl:flex-col">
-            <div className="flex flex-col grow gap-y-5 overflow-y-auto bg-yellow-500 dark:bg-yellow-500/90">
+        <aside className="hidden xl:flex xl:w-72 xl:z-50 xl:inset-y-0  xl:flex-col">
+            <div className="flex flex-col grow gap-y-5 overflow-y-auto bg-accent-400">
                 <header className="flex h-16 shrink-0 gap-6 items-center px-6 text-zinc-50">
                     <AppLogo
                         width={32}

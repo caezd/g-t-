@@ -443,7 +443,7 @@ function ServicePickerRow({ form }) {
     );
 }
 
-export function TimeEntryForm() {
+export function TimeEntryForm({ onCreated }) {
     const supabase = createClient();
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const form = useForm({
@@ -460,10 +460,10 @@ export function TimeEntryForm() {
     });
 
     async function onSubmitHandler(values) {
-        //TODO: s'assurer qu'un mandat existe, sinon utiliser hors forfait.
         const profile_id = await supabase.auth
             .getUser()
             .then(({ data: { user } }) => user?.id);
+
         const { data, error } = await supabase
             .from("time_entries")
             .insert([
@@ -473,18 +473,22 @@ export function TimeEntryForm() {
                     client_id: values.client_id,
                     details: values.details,
                     service_id: values.service_id,
-                    mandat_id: values.mandat_id,
+                    mandat_id: values.mandat_id || null,
                     profile_id,
                 },
             ])
-            .select()
+            .select(
+                "*, client:clients!inner(*), mandat:clients_mandats!inner(*, mandat_types!inner(*)), clients_services!inner(*)"
+            )
             .single();
         if (error) {
+            console.log(values);
             console.error(error);
             return;
         }
         console.log("Inserted time entry:", data);
         form.reset();
+        onCreated(data);
     }
 
     return (

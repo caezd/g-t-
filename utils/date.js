@@ -28,6 +28,13 @@ export const weekRange = (date) => {
     };
 };
 
+export function FormatDecimalsToHours(floatHours) {
+    if (floatHours == null || Number.isNaN(floatHours)) return "";
+    const hours = Math.trunc(floatHours);
+    const minutes = Math.round((floatHours - hours) * 60);
+    return `${hours}h${minutes.toString().padStart(2, "0")}`;
+}
+
 export function toHoursDecimal(input) {
     if (input == null || input === "") return undefined;
     if (typeof input === "number" && !Number.isNaN(input)) return input;

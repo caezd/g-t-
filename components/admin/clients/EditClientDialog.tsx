@@ -32,8 +32,11 @@ import {
     SelectItem,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { is } from "date-fns/locale";
 
-type MandateType = { id: number; description: string };
+const HF_CODE = "HORS_FORFAIT";
+
+type MandateType = { id: number; code?: string | null; description: string };
 type Pivot = {
     id: number;
     mandat_type_id: number;
@@ -99,9 +102,12 @@ export function EditClientDialog({
             const [{ data: t }, { data: pivots }] = await Promise.all([
                 supabase
                     .from("mandat_types")
-                    .select("id, description")
+                    .select("id, description, code")
                     .order("description"),
-                supabase.from("clients_mandats").select("*").eq("id", clientId),
+                supabase
+                    .from("clients_mandats")
+                    .select("*")
+                    .eq("client_id", clientId),
             ]);
             setTypes(t ?? []);
             const all = (pivots ?? []) as Pivot[];
@@ -126,7 +132,10 @@ export function EditClientDialog({
         .getValues("mandates")
         .filter((m) => !m._delete)
         .map((m) => m.mandat_type_id);
-    const available = types.filter((mt) => !selectedActiveIds.includes(mt.id));
+    const addableTypes = (types ?? [])
+        .filter((mt) => mt.code !== HF_CODE)
+        .filter((mt) => !selectedActiveIds.includes(mt.id));
+    const available = addableTypes;
 
     const addMandate = (mandat_type_id: number) => {
         append({
@@ -205,7 +214,7 @@ export function EditClientDialog({
                     });
                 } else {
                     toInsert.push({
-                        id: clientId,
+                        client_id: clientId,
                         mandat_type_id: m.mandat_type_id,
                         billing_type: m.billing_type,
                         amount: m.amount,
@@ -336,159 +345,169 @@ export function EditClientDialog({
                                 const flagged =
                                     form.getValues(`mandates.${i}._delete`) ===
                                     true;
+                                const isHF = mt?.code === HF_CODE;
 
                                 return (
-                                    <div
-                                        key={f._key}
-                                        className="rounded-lg border p-4 grid gap-4 md:grid-cols-4"
-                                    >
-                                        <div className="md:col-span-4 -mb-1 text-sm font-semibold">
-                                            {mt?.description ?? "Mandat"}
-                                            {flagged && (
-                                                <span className="ml-2 text-xs text-red-600">
-                                                    (à supprimer)
-                                                </span>
-                                            )}
-                                        </div>
+                                    !isHF && (
+                                        <div
+                                            key={f._key}
+                                            className="rounded-lg border p-4 grid gap-4 md:grid-cols-4"
+                                        >
+                                            <div className="md:col-span-4 -mb-1 text-sm font-semibold">
+                                                {mt?.description ?? "Mandat"}
 
-                                        <FormField
-                                            control={form.control}
-                                            name={`mandates.${i}.billing_type`}
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>Type</FormLabel>
-                                                    <Select
-                                                        value={field.value}
-                                                        onValueChange={
-                                                            field.onChange
+                                                {flagged && (
+                                                    <span className="ml-2 text-xs text-red-600">
+                                                        (à supprimer)
+                                                    </span>
+                                                )}
+                                                {!f.id && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        onClick={() =>
+                                                            remove(i)
                                                         }
                                                     >
+                                                        Retirer
+                                                    </Button>
+                                                )}
+                                            </div>
+
+                                            <FormField
+                                                control={form.control}
+                                                name={`mandates.${i}.billing_type`}
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>
+                                                            Type
+                                                        </FormLabel>
+                                                        <Select
+                                                            value={field.value}
+                                                            onValueChange={
+                                                                field.onChange
+                                                            }
+                                                            disabled={isHF}
+                                                        >
+                                                            <FormControl>
+                                                                <SelectTrigger>
+                                                                    <SelectValue placeholder="Choisir…" />
+                                                                </SelectTrigger>
+                                                            </FormControl>
+                                                            <SelectContent>
+                                                                <SelectItem value="hourly">
+                                                                    Hourly
+                                                                </SelectItem>
+                                                                <SelectItem value="monthly">
+                                                                    Monthly
+                                                                </SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <FormField
+                                                control={form.control}
+                                                name={`mandates.${i}.amount`}
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>
+                                                            Montant
+                                                        </FormLabel>
                                                         <FormControl>
-                                                            <SelectTrigger>
-                                                                <SelectValue placeholder="Choisir…" />
-                                                            </SelectTrigger>
+                                                            <Input
+                                                                type="number"
+                                                                inputMode="decimal"
+                                                                step="0.01"
+                                                                value={
+                                                                    Number.isFinite(
+                                                                        field.value
+                                                                    )
+                                                                        ? field.value
+                                                                        : 0
+                                                                }
+                                                                onChange={(
+                                                                    e
+                                                                ) => {
+                                                                    const v =
+                                                                        e
+                                                                            .currentTarget
+                                                                            .valueAsNumber;
+                                                                    field.onChange(
+                                                                        Number.isFinite(
+                                                                            v
+                                                                        )
+                                                                            ? v
+                                                                            : 0
+                                                                    );
+                                                                }}
+                                                            />
                                                         </FormControl>
-                                                        <SelectContent>
-                                                            <SelectItem value="hourly">
-                                                                Hourly
-                                                            </SelectItem>
-                                                            <SelectItem value="monthly">
-                                                                Monthly
-                                                            </SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
 
-                                        <FormField
-                                            control={form.control}
-                                            name={`mandates.${i}.amount`}
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>
-                                                        Montant
-                                                    </FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            type="number"
-                                                            inputMode="decimal"
-                                                            step="0.01"
-                                                            value={
-                                                                Number.isFinite(
-                                                                    field.value
-                                                                )
-                                                                    ? field.value
-                                                                    : 0
-                                                            }
-                                                            onChange={(e) => {
-                                                                const v =
-                                                                    e
-                                                                        .currentTarget
-                                                                        .valueAsNumber;
-                                                                field.onChange(
+                                            <FormField
+                                                control={form.control}
+                                                name={`mandates.${i}.quota_max`}
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>
+                                                            Quota max (h)
+                                                        </FormLabel>
+                                                        <FormControl>
+                                                            <Input
+                                                                type="number"
+                                                                inputMode="numeric"
+                                                                step="1"
+                                                                value={
                                                                     Number.isFinite(
-                                                                        v
+                                                                        field.value
                                                                     )
-                                                                        ? v
+                                                                        ? field.value
                                                                         : 0
-                                                                );
-                                                            }}
-                                                        />
-                                                    </FormControl>
-                                                    <FormDescription>
-                                                        Ex.: 125.00
-                                                    </FormDescription>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-
-                                        <FormField
-                                            control={form.control}
-                                            name={`mandates.${i}.quota_max`}
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>
-                                                        Quota max (h)
-                                                    </FormLabel>
-                                                    <FormControl>
-                                                        <Input
-                                                            type="number"
-                                                            inputMode="numeric"
-                                                            step="1"
-                                                            value={
-                                                                Number.isFinite(
-                                                                    field.value
-                                                                )
-                                                                    ? field.value
-                                                                    : 0
-                                                            }
-                                                            onChange={(e) => {
-                                                                const v =
+                                                                }
+                                                                onChange={(
                                                                     e
-                                                                        .currentTarget
-                                                                        .valueAsNumber;
-                                                                field.onChange(
-                                                                    Number.isFinite(
-                                                                        v
-                                                                    )
-                                                                        ? v
-                                                                        : 0
-                                                                );
-                                                            }}
-                                                        />
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
+                                                                ) => {
+                                                                    const v =
+                                                                        e
+                                                                            .currentTarget
+                                                                            .valueAsNumber;
+                                                                    field.onChange(
+                                                                        Number.isFinite(
+                                                                            v
+                                                                        )
+                                                                            ? v
+                                                                            : 0
+                                                                    );
+                                                                }}
+                                                            />
+                                                        </FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
 
-                                        <div className="flex items-end gap-3">
-                                            <label className="flex items-center gap-2 text-sm">
-                                                <Checkbox
-                                                    checked={!!flagged}
-                                                    onCheckedChange={(c) =>
-                                                        toggleDelete(
-                                                            i,
-                                                            c === true
-                                                        )
-                                                    }
-                                                />
-                                                Marquer pour suppression
-                                            </label>
-                                            {!f.id && (
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    onClick={() => remove(i)}
-                                                >
-                                                    Retirer
-                                                </Button>
-                                            )}
+                                            <div className="flex items-end gap-3">
+                                                <label className="flex items-center gap-2 text-sm">
+                                                    <Checkbox
+                                                        checked={!!flagged}
+                                                        onCheckedChange={(c) =>
+                                                            toggleDelete(
+                                                                i,
+                                                                c === true
+                                                            )
+                                                        }
+                                                    />
+                                                    Désactiver
+                                                </label>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )
                                 );
                             })}
                         </div>

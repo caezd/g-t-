@@ -64,9 +64,8 @@ function useClientMandates(supabase, clientId) {
             const { data, error } = await supabase
                 .from("clients_mandats")
                 .select("*, mandat_types(*)")
-                .eq("id", clientId)
+                .eq("client_id", clientId)
                 .order("id", { ascending: true });
-            console.log(data);
 
             if (alive) {
                 setMandates(error ? [] : data ?? []);
@@ -119,12 +118,30 @@ export function ClientPickerRow({ form }) {
 
     useEffect(() => {
         async function fetchClients() {
-            const { data } = await supabase
-                .from("clients")
-                .select("id, name")
-                .neq("id", 0);
-            // retirer le client 0
-            setClients(data);
+            const {
+                data: { user },
+            } = await supabase.auth.getUser();
+            if (!user) return setClients([]);
+
+            const { data, error } = await supabase
+                .from("clients_team")
+                .select("client:clients(id, name)")
+                .eq("user_id", user.id);
+
+            if (error) {
+                console.error("Error fetching team clients:", error);
+                setClients([]);
+                return;
+            }
+
+            const unique = new Map();
+            for (const row of data ?? []) {
+                if (row.client) unique.set(row.client.id, row.client);
+            }
+            const list = Array.from(unique.values()).sort((a, b) =>
+                a.name.localeCompare(b.name, "fr")
+            );
+            setClients(list.filter((c) => c.id !== 0));
         }
         fetchClients();
     }, [supabase]);
@@ -277,7 +294,6 @@ function MandatePickerRow({ form }) {
         supabase,
         internal ? 0 : clientId
     );
-    console.log(mandates);
 
     return (
         <FormField

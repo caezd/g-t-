@@ -12,12 +12,13 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ClientTeamList } from "@/components/admin/clients/TeamDialog";
+import { MandateTimeEntriesCard } from "@/components/admin/clients/MandateTimeEntriesCard";
 
 import { pluralize } from "@/lib/pluralize";
 
 export default async function ClientPage({ params }) {
     const supabase = await createClient();
-    const { id } = params;
+    const { id } = await params;
     const clientId = parseInt(id, 10);
 
     const { data: client } = await supabase
@@ -56,7 +57,7 @@ export default async function ClientPage({ params }) {
                             <div className="mt-2 flex items-center text-sm text-zinc-600 dark:text-zinc-400">
                                 <CalendarRange className="mr-2" />
                                 {pluralize("Mandat", {
-                                    count: client?.clients_mandats.length,
+                                    count: client?.clients_mandats.length - 1,
                                     inclusive: true,
                                 })}
                             </div>
@@ -64,36 +65,22 @@ export default async function ClientPage({ params }) {
                     </div>
                     <div className="mt-5 flex lg:mt-0 lg:ml-4">
                         <span className="hidden sm:block">
-                            <Button>
-                                <svg
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                    data-slot="icon"
-                                    aria-hidden="true"
-                                    className="mr-1.5 -ml-0.5 size-5 text-white"
-                                >
-                                    <path d="m2.695 14.762-1.262 3.155a.5.5 0 0 0 .65.65l3.155-1.262a4 4 0 0 0 1.343-.886L17.5 5.501a2.121 2.121 0 0 0-3-3L3.58 13.419a4 4 0 0 0-.885 1.343Z" />
-                                </svg>
-                                Edit
-                            </Button>
-                        </span>
-
-                        <span className="ml-3 hidden sm:block">
-                            <Button>View</Button>
-                        </span>
-
-                        <span className="sm:ml-3">
-                            <Button
-                                type="button"
-                                className="inline-flex items-center rounded-md bg-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
-                            >
-                                Publish
-                            </Button>
+                            <Button>Modifier</Button>
                         </span>
                     </div>
                 </header>
-                <section className="grid grid-cols-3">
-                    <Card className="col-span-1 lg:col-start-3 ">
+                <section className="grid lg:grid-cols-3 gap-8 mt-12">
+                    <div className="col-span-2">
+                        {client?.clients_mandats.map((mandat) => (
+                            <MandateTimeEntriesCard
+                                key={mandat.id}
+                                mandat={mandat}
+                                clientId={clientId}
+                            />
+                        ))}
+                    </div>
+
+                    <Card className="col-span-1 lg:col-start-3">
                         <CardHeader>
                             <CardTitle>Équipe</CardTitle>
                         </CardHeader>

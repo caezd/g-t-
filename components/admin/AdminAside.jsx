@@ -12,11 +12,12 @@ import {
     Settings,
     Users,
     Home,
+    BookMarked,
 } from "lucide-react";
 import { ThemeSwitcher } from "../theme-switcher";
 
 const links = [
-    { name: "Dashboard", href: "/admin", icon: Home },
+    { name: "Bible", href: "/admin", icon: BookMarked },
     { name: "Activité", href: "/admin/activities", icon: Radio },
     { name: "Employés", href: "/admin/employees", icon: Users },
     { name: "Clients", href: "/admin/clients", icon: FolderClosed },

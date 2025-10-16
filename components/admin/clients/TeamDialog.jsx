@@ -47,7 +47,7 @@ export function TeamDialog({ clientId, onAdded }) {
             setLoading(true);
             const { data, error } = await supabase
                 .from("profiles")
-                .select("id, email")
+                .select("id, email, full_name")
                 .order("created_at", { ascending: true })
                 .limit(200);
             if (!active) return;
@@ -63,7 +63,9 @@ export function TeamDialog({ clientId, onAdded }) {
         if (!query) return profiles;
         const q = query.toLowerCase();
         return profiles.filter(
-            (p) => p.email && p.email.toLowerCase().includes(q)
+            (p) =>
+                p.full_name.toLowerCase().includes(q) ||
+                p.email.toLowerCase().includes(q)
         );
     }, [profiles, query]);
 
@@ -111,9 +113,7 @@ export function TeamDialog({ clientId, onAdded }) {
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                            Rôle pour l'ajout
-                        </label>
+                        <label className="text-sm font-medium">Rôle</label>
                         <RadioGroup
                             value={role}
                             onValueChange={setRole}
@@ -171,7 +171,7 @@ export function TeamDialog({ clientId, onAdded }) {
                                         <CommandEmpty>
                                             Aucun résultat
                                         </CommandEmpty>
-                                        <CommandGroup heading="Utilisateurs">
+                                        <CommandGroup>
                                             {filtered.map((p) => {
                                                 const active = !!selected.find(
                                                     (x) => x.id === p.id
@@ -211,19 +211,20 @@ export function TeamDialog({ clientId, onAdded }) {
                             {selected.map((p) => (
                                 <Badge
                                     key={p.id}
-                                    variant="secondary"
-                                    className="flex items-center gap-1"
+                                    className="border border-zinc-800"
                                 >
                                     {p.full_name || p.email}
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleSelect(p)}
-                                        aria-label="Retirer"
-                                    >
-                                        <X className="h-3 w-3" />
-                                    </button>
                                 </Badge>
-                            ))}
+                            ))}{" "}
+                            se {selected.length > 1 ? "verront" : "verra"}{" "}
+                            attribuer le rôle{" "}
+                            <strong>
+                                {role === "manager"
+                                    ? "Chargé"
+                                    : role === "assistant"
+                                    ? "Adjoint"
+                                    : "Aidant"}
+                            </strong>
                         </div>
                     )}
 
@@ -233,7 +234,7 @@ export function TeamDialog({ clientId, onAdded }) {
                             variant="ghost"
                             onClick={() => setOpen(false)}
                         >
-                            Annuler
+                            Fermer
                         </Button>
                         <Button
                             type="submit"
@@ -242,7 +243,7 @@ export function TeamDialog({ clientId, onAdded }) {
                             {loading ? (
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             ) : null}
-                            Ajouter{" "}
+                            Attribuer{" "}
                             {selected.length ? `(${selected.length})` : ""}
                         </Button>
                     </div>

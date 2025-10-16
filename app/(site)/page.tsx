@@ -159,7 +159,6 @@ export default function HomePage() {
                 .order("doc", { ascending: false })
                 .limit(100);
             if (error) throw error;
-            console.log(data);
             setEntries(data || []);
         }
         fetchEntries();
@@ -193,35 +192,25 @@ export default function HomePage() {
     }
     return (
         <>
-            <div className="dark:bg-zinc-700/10 bg-zinc-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                {/* <div
-                        className={cn(
-                            "border-zinc-200 dark:border-zinc-800 px-4 py-6 sm:px-6 lg:px-8"
-                        )}
-                    >
-                        <p
-                            className={
-                                "text-sm font-medium leading-6 dark:text-zinc-400"
-                            }
+            <div className="flex-4 border-zinc-200 dark:border-zinc-800 flex flex-col">
+                <div className="dark:bg-zinc-700/10 bg-zinc-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 border-b">
+                    {stats.map((item) => (
+                        <div
+                            className={cn(
+                                "border-zinc-200 dark:border-zinc-800 px-4 py-6 sm:px-6 lg:px-8"
+                            )}
                         >
-                            {item.label}
-                        </p>
-                        <p className={"mt-2 flex items-baseline gap-x-2"}>
-                            <span
-                                className={cn(
-                                    "dark:text-white text-4xl font-semibold -tracking-tight whitespace-nowrap",
-                                    item.conditionalStyle &&
-                                        (item.amount >= 0
-                                            ? item.conditionalStyle?.positive
-                                            : item.conditionalStyle?.negative)
-                                )}
+                            <p
+                                className={
+                                    "text-sm font-medium leading-6 dark:text-zinc-400"
+                                }
                             >
-                                {item.amount}
-                            </span>
-                            {item.unit && (
+                                {item.label}
+                            </p>
+                            <p className={"mt-2 flex items-baseline gap-x-2"}>
                                 <span
                                     className={cn(
-                                        "text-sm dark:text-zinc-400",
+                                        "dark:text-white text-4xl font-semibold -tracking-tight whitespace-nowrap",
                                         item.conditionalStyle &&
                                             (item.amount >= 0
                                                 ? item.conditionalStyle
@@ -230,16 +219,30 @@ export default function HomePage() {
                                                       ?.negative)
                                     )}
                                 >
-                                    {item.unit}
+                                    {item.amount}
                                 </span>
-                            )}
-                        </p>
-                    </div> */}
-            </div>
-            <div className="flex-2 border-zinc-200 dark:border-zinc-800 flex px-4 py-4 sm:px-6 lg:px-8">
+                                {item.unit && (
+                                    <span
+                                        className={cn(
+                                            "text-sm dark:text-zinc-400",
+                                            item.conditionalStyle &&
+                                                (item.amount >= 0
+                                                    ? item.conditionalStyle
+                                                          ?.positive
+                                                    : item.conditionalStyle
+                                                          ?.negative)
+                                        )}
+                                    >
+                                        {item.unit}
+                                    </span>
+                                )}
+                            </p>
+                        </div>
+                    ))}
+                </div>
                 <TimeEntryForm onCreated={handleEntryCreated} />
             </div>
-            <aside className="flex-1 lg:w-96 lg:overflow-y-auto lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 py-12">
+            <aside className="flex-3 lg:w-96 lg:overflow-y-auto lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 py-12 overflow-auto max-h-screen">
                 <div className="max-w-lg px-6 mx-auto space-y-10">
                     {grouped.map((g, gi) => (
                         <section key={gi}>

@@ -5,21 +5,24 @@ import Link from "next/link";
 
 const links = [
     { name: "Feuille de temps", href: "/" },
+    { name: "Équipes", href: "/docs" },
     { name: "Documentation", href: "/docs" },
 ];
 
 const NavLink = ({ name, href }) => {
     const pathname = usePathname();
-    /** Check if the current path is active, deeply */
     const isActive =
         pathname === href || (href !== "/" && pathname.startsWith(href));
-    const classes = cn(isActive && "border-amber-500 pointer-events-none");
+    const classes = cn(
+        isActive &&
+            "border-accent-400 pointer-events-none font-semibold text-zinc-950 dark:text-zinc-50"
+    );
     return (
         <Link
             href={href}
             key={name.toLowerCase()}
             className={cn(
-                "inline-flex items-center border-b-2 border-transparent py- text-zinc-700 hover:text-zinc-950",
+                "inline-flex items-center border-b-2 border-transparent text-sm hover:border-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100",
                 classes
             )}
         >

@@ -5,7 +5,7 @@ import Link from "next/link";
 
 const links = [
     { name: "Feuille de temps", href: "/" },
-    { name: "Équipes", href: "/docs" },
+    { name: "Équipes", href: "/teams" },
     { name: "Documentation", href: "/docs" },
 ];
 

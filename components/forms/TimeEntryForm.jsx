@@ -480,6 +480,17 @@ export function TimeEntryForm({ onCreated }) {
             .getUser()
             .then(({ data: { user } }) => user?.id);
 
+        // récupérer le role dans clients_team
+        const { data: teamData, error: teamError } = await supabase
+            .from("clients_team")
+            .select("role")
+            .eq("user_id", profile_id)
+            .eq("client_id", values.client_id)
+            .single();
+
+        console.log("teamData", teamData, teamError);
+
+        // Insert la nouvelle entrée de temps
         const { data, error } = await supabase
             .from("time_entries")
             .insert([
@@ -491,6 +502,7 @@ export function TimeEntryForm({ onCreated }) {
                     service_id: values.service_id,
                     mandat_id: values.mandat_id || null,
                     profile_id,
+                    role: teamData?.role || null,
                 },
             ])
             .select()
@@ -556,7 +568,15 @@ export function TimeEntryForm({ onCreated }) {
                                             }}
                                             disabled={(date) =>
                                                 date > new Date() ||
-                                                date < new Date("1900-01-01")
+                                                date <
+                                                    set(new Date(), {
+                                                        // limite à la semaine en cours seulement
+                                                        month: new Date().getMonth(),
+                                                        year: new Date().getFullYear(),
+                                                        date:
+                                                            new Date().getDate() -
+                                                            new Date().getDay(),
+                                                    })
                                             }
                                         />
                                     </PopoverContent>

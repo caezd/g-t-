@@ -29,10 +29,18 @@ export const weekRange = (date) => {
 };
 
 export function FormatDecimalsToHours(floatHours) {
-    if (floatHours == null || Number.isNaN(floatHours)) return "";
-    const hours = Math.trunc(floatHours);
-    const minutes = Math.round((floatHours - hours) * 60);
-    return `${hours}h${minutes.toString().padStart(2, "0")}`;
+    const v = Number(floatHours);
+    if (!isFinite(v)) return ""; // gère null/NaN/Infinity
+
+    const sign = v < 0 ? "-" : "";
+
+    // Convertir tout en minutes pour éviter les surprises d'arrondi
+    const totalMin = Math.round(Math.abs(v) * 60);
+
+    const hours = Math.floor(totalMin / 60);
+    const minutes = totalMin % 60;
+
+    return `${sign}${hours}h${minutes.toString().padStart(2, "0")}`;
 }
 
 export function toHoursDecimal(input) {

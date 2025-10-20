@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { weekRange, FormatDecimalsToHours } from "@/utils/date";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
 type Stats = {
     rangeLabel: string; // ex. "Du 12 au 18 oct."
     billedHours: number; // heures décimales
@@ -41,6 +43,7 @@ export function UserWeeklyStats({
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<Stats | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [alert, setAlert] = useState<string | null>(null);
 
     // On fige la semaine en cours au montage (évite les recomputes).
     const { startISO, endISO, label } = useMemo(() => {
@@ -126,6 +129,27 @@ export function UserWeeklyStats({
         };
     }, [startISO, endISO, label, nonce]);
 
+    useEffect(() => {
+        if (!stats) return;
+        const { bankAvailable } = stats;
+        setAlert(null);
+        // setup l'alerte si banque négative
+        if (bankAvailable < 0) {
+            setAlert(
+                `Votre banque d'heures est négative de ${FormatDecimalsToHours(
+                    bankAvailable
+                )}. Pensez à aviser votre chargé de comptes ou votre client !`
+            );
+        }
+        // setup l'alerte si banque plus grande que 8h le vendredi
+        const now = new Date();
+        if (now.getDay() === 5 && bankAvailable > 8) {
+            setAlert(
+                "Votre banque est élevée pour un vendredi. N'oubliez pas de faire le point de votre semaine !"
+            );
+        }
+    }, [stats]);
+
     if (loading) {
         return (
             <div
@@ -192,6 +216,14 @@ export function UserWeeklyStats({
                 className
             )}
         >
+            {alert && (
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3 border-b px-4 py-4 sm:px-6 lg:px-8 ">
+                    <Alert variant="warning">
+                        <AlertTitle>Attention !</AlertTitle>
+                        <AlertDescription>{alert}</AlertDescription>
+                    </Alert>
+                </div>
+            )}
             {items.map((item, idx) => (
                 <div
                     key={idx}

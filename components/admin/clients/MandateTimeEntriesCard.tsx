@@ -11,47 +11,44 @@ import {
     CardFooter,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon } from "lucide-react";
+import {
+    Popover,
+    PopoverTrigger,
+    PopoverContent,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar"; // shadcn calendar
+import { cn } from "@/lib/utils";
+import { format, startOfDay, endOfDay } from "date-fns";
+import { frCA } from "date-fns/locale";
+import type { DateRange } from "react-day-picker";
 
-const RANGES = ["thisMonth", "last30", "last60", "all"] as const;
-type RangeKey = (typeof RANGES)[number];
-
-function computeRange(range: RangeKey, anchorNow: Date) {
-    if (range === "all")
-        return { from: null as Date | null, to: null as Date | null };
-    if (range === "thisMonth") {
-        const from = new Date(
-            anchorNow.getFullYear(),
-            anchorNow.getMonth(),
-            1,
-            0,
-            0,
-            0
-        );
-        return { from, to: anchorNow };
-    }
-    const days = range === "last30" ? 30 : 60;
-    const from = new Date(anchorNow.getTime() - days * 24 * 60 * 60 * 1000);
-    return { from, to: anchorNow };
-}
-
+// Helpers
 function fmtDateISO(d: string | Date) {
     const date = typeof d === "string" ? new Date(d) : d;
     return new Intl.DateTimeFormat("fr-CA", { dateStyle: "medium" }).format(
         date
     );
 }
-
 function fmtHoursDecimal(n: number | null | undefined) {
     const v = n ?? 0;
     return `${v.toFixed(2)} h`;
 }
-
 function fmtHoursHM(n: number | null | undefined) {
     const totalMin = Math.round((n ?? 0) * 60);
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
     return `${h} h ${m.toString().padStart(2, "0")} min`;
+}
+function rangeLabel(range: DateRange | undefined) {
+    if (!range?.from && !range?.to) return "Toutes les dates";
+    if (range?.from && !range?.to)
+        return format(range.from, "PPP", { locale: frCA });
+    return `${format(range!.from!, "PPP", { locale: frCA })} – ${format(
+        range!.to!,
+        "PPP",
+        { locale: frCA }
+    )}`;
 }
 
 type Row = {
@@ -75,17 +72,24 @@ export function MandateTimeEntriesCard({
     const supabaseRef = useRef<ReturnType<typeof createClient>>();
     if (!supabaseRef.current) supabaseRef.current = createClient();
 
-    const [range, setRange] = useState<RangeKey>("thisMonth");
-    const [anchorNow, setAnchorNow] = useState<Date>(() => new Date()); // figé au premier render
     const [loading, setLoading] = useState(true);
     const [rows, setRows] = useState<Row[]>([]);
     const [mandatType, setMandatType] = useState<string | null>(null);
 
-    // Quand on change de filtre, on fige un NOUVEAU "now" (sinon l'effet resterait figé)
-    const onSetRange = (r: RangeKey) => {
-        setRange(r);
-        setAnchorNow(new Date());
-    };
+    // Date range UI state
+    const [open, setOpen] = useState(false);
+    const [dateRange, setDateRange] = useState<DateRange | undefined>(
+        undefined
+    ); // undefined = “toutes les dates”
+
+    // Clé stable pour l’effet (pas d’ISO dans deps directement)
+    const rangeKey = useMemo(() => {
+        const f = dateRange?.from
+            ? startOfDay(dateRange.from).toISOString()
+            : "";
+        const t = dateRange?.to ? endOfDay(dateRange.to).toISOString() : "";
+        return `${f}|${t}`;
+    }, [dateRange?.from, dateRange?.to]);
 
     useEffect(() => {
         let alive = true;
@@ -93,7 +97,6 @@ export function MandateTimeEntriesCard({
             setLoading(true);
             const supabase = supabaseRef.current!;
 
-            const { from, to } = computeRange(range, anchorNow);
             let q = supabase
                 .from("time_entries")
                 .select(
@@ -102,8 +105,11 @@ export function MandateTimeEntriesCard({
                 .eq("mandat_id", mandat.id)
                 .order("doc", { ascending: false });
 
-            if (from) q = q.gte("doc", from.toISOString());
-            if (to) q = q.lte("doc", to.toISOString());
+            // Applique les bornes si présentes
+            if (dateRange?.from)
+                q = q.gte("doc", startOfDay(dateRange.from).toISOString());
+            if (dateRange?.to)
+                q = q.lte("doc", endOfDay(dateRange.to).toISOString());
 
             const { data, error } = await q;
             if (!alive) return;
@@ -117,6 +123,7 @@ export function MandateTimeEntriesCard({
             setLoading(false);
         })();
 
+        // Charge l’intitulé du type de mandat (une fois, par id)
         (async () => {
             const supabase = supabaseRef.current!;
             const { data, error } = await supabase
@@ -135,7 +142,8 @@ export function MandateTimeEntriesCard({
         return () => {
             alive = false;
         };
-    }, [mandat.id, range, anchorNow]);
+        // dépend de l’id du mandat et de la clé de range
+    }, [mandat.id, rangeKey]);
 
     const totalHours = useMemo(
         () => rows.reduce((acc, r) => acc + (r.billed_amount ?? 0), 0),
@@ -147,23 +155,52 @@ export function MandateTimeEntriesCard({
             <CardHeader className="flex flex-col gap-1">
                 <CardTitle>{mandatType}</CardTitle>
                 <CardDescription>
-                    {mandat?.description ? ` • ${mandat.description}` : ""}
+                    {mandat?.description ? `• ${mandat.description}` : ""}
                 </CardDescription>
 
                 <div className="flex gap-2 mt-2">
-                    {RANGES.map((key) => (
-                        <Button
-                            key={key}
-                            size="sm"
-                            variant={range === key ? "default" : "outline"}
-                            onClick={() => onSetRange(key)}
+                    <Popover open={open} onOpenChange={setOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="outline"
+                                className={cn(
+                                    "justify-start text-left font-normal min-w-[260px]"
+                                )}
+                            >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {rangeLabel(dateRange)}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            className="p-0"
+                            align="start"
+                            className="w-auto"
                         >
-                            {key === "thisMonth" && "Mois en cours"}
-                            {key === "last30" && "30 derniers jours"}
-                            {key === "last60" && "60 derniers jours"}
-                            {key === "all" && "Tout"}
-                        </Button>
-                    ))}
+                            <Calendar
+                                mode="range"
+                                selected={dateRange}
+                                onSelect={(range) => setDateRange(range)}
+                                numberOfMonths={2}
+                                initialFocus
+                                locale={frCA}
+                            />
+                            <div className="flex items-center justify-between p-2 border-t">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setDateRange(undefined)}
+                                >
+                                    Réinitialiser
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={() => setOpen(false)}
+                                >
+                                    Appliquer
+                                </Button>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
                 </div>
             </CardHeader>
 
@@ -215,18 +252,11 @@ export function MandateTimeEntriesCard({
             </CardContent>
 
             <CardFooter className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                    Filtre&nbsp;:{" "}
-                    {range === "thisMonth"
-                        ? "mois en cours"
-                        : range === "last30"
-                        ? "30 jours"
-                        : range === "last60"
-                        ? "60 jours"
-                        : "tout"}
-                </div>
-                <div className="text-sm font-medium">
-                    Total cumulé&nbsp;: {totalHours}
+                <div className="text-sm font-medium ml-auto">
+                    Total cumulé&nbsp;: {fmtHoursDecimal(totalHours)}{" "}
+                    <span className="text-muted-foreground">
+                        ({fmtHoursHM(totalHours)})
+                    </span>
                 </div>
             </CardFooter>
         </Card>

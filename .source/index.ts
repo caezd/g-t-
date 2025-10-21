@@ -1,7 +1,7 @@
 // @ts-nocheck -- skip type checking
-import * as docs_2 from "../content/docs/dossier/index.mdx?collection=docs&hash=1760724661420"
-import * as docs_1 from "../content/docs/dossier/document.mdx?collection=docs&hash=1760724661420"
-import * as docs_0 from "../content/docs/index.mdx?collection=docs&hash=1760724661420"
+import * as docs_2 from "../content/wiki/clients/clic-montreal/index.mdx?collection=docs&hash=1761069832604"
+import * as docs_1 from "../content/wiki/clients/document.mdx?collection=docs&hash=1761069832604"
+import * as docs_0 from "../content/wiki/interne/index.mdx?collection=docs&hash=1761069832604"
 import { _runtime } from "fumadocs-mdx/runtime/next"
 import * as _source from "../source.config"
-export const docs = _runtime.docs<typeof _source.docs>([{ info: {"path":"index.mdx","fullPath":"content\\docs\\index.mdx"}, data: docs_0 }, { info: {"path":"dossier/document.mdx","fullPath":"content\\docs\\dossier\\document.mdx"}, data: docs_1 }, { info: {"path":"dossier/index.mdx","fullPath":"content\\docs\\dossier\\index.mdx"}, data: docs_2 }], [])
+export const docs = _runtime.docs<typeof _source.docs>([{ info: {"path":"interne/index.mdx","fullPath":"content\\wiki\\interne\\index.mdx"}, data: docs_0 }, { info: {"path":"clients/document.mdx","fullPath":"content\\wiki\\clients\\document.mdx"}, data: docs_1 }, { info: {"path":"clients/clic-montreal/index.mdx","fullPath":"content\\wiki\\clients\\clic-montreal\\index.mdx"}, data: docs_2 }], [{"info":{"path":"meta.json","fullPath":"content\\wiki\\meta.json"},"data":{"pages":["interne","clients"]}}, {"info":{"path":"clients/meta.json","fullPath":"content\\wiki\\clients\\meta.json"},"data":{"title":"Clients","description":"Toute la documentation spécifique aux clients","root":true}}, {"info":{"path":"interne/meta.json","fullPath":"content\\wiki\\interne\\meta.json"},"data":{"title":"FocusTDL / Interne","description":"The description of root folder (optional)","root":true}}])

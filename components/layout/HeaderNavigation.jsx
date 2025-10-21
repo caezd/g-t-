@@ -6,7 +6,7 @@ import Link from "next/link";
 const links = [
     { name: "Feuille de temps", href: "/" },
     { name: "Équipes", href: "/teams" },
-    { name: "Documentation", href: "/docs" },
+    { name: "Wiki", href: "/wiki/interne" },
 ];
 
 const NavLink = ({ name, href }) => {

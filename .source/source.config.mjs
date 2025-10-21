@@ -6,12 +6,14 @@ import {
 } from "fumadocs-mdx/config";
 import { z } from "zod";
 var docs = defineDocs({
-  dir: "content/docs",
+  dir: "content/wiki",
   docs: defineCollections({
     schema: z.object({
       title: z.string().min(1),
       public: z.boolean().optional(),
-      clients: z.array(z.string()).optional()
+      access: z.object({
+        mode: z.enum(["client", "any", "all"]).optional()
+      }).optional()
     })
   })
 });

@@ -82,3 +82,18 @@ export function toHoursDecimal(input) {
     // Rien de reconnu
     return undefined;
 }
+
+export function startOfWeekSunday(date) {
+    const d = new Date(date);
+    const day = d.getDay(); // 0 = dimanche
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - day);
+    return d;
+}
+export function endOfWeekSaturday(date) {
+    const start = startOfWeekSunday(date);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return end;
+}

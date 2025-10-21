@@ -1,10 +1,5 @@
 "use client";
 
-// components/TeamDialog.jsx
-// Dialog to add existing users (from `profiles`) to a client's team with role: "charge" or "adjoint".
-// Requirements: Supabase client, shadcn/ui (Dialog, Command, Badge, RadioGroup), Tailwind.
-// DB prerequisites are at the bottom of this file.
-
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -90,6 +85,7 @@ export function TeamDialog({ clientId, onAdded }) {
             .upsert(rows, { onConflict: "client_id,user_id" });
         setLoading(false);
         if (!error) {
+            await fetch("/api/docs-bump", { method: "POST" });
             setOpen(false);
             setSelected([]);
             if (onAdded) onAdded();
@@ -262,7 +258,6 @@ export function ClientTeamList({ clientId, initial = [] }) {
     const supabase = useMemo(() => createClient(), []);
     const [rows, setRows] = useState(initial);
     const [busyId, setBusyId] = useState(null);
-    console.log("ClientTeamList render", { clientId, rows });
 
     async function refresh() {
         const { data } = await supabase
@@ -282,6 +277,7 @@ export function ClientTeamList({ clientId, initial = [] }) {
         setBusyId(id);
         await supabase.from("clients_team").delete().eq("id", id);
         setBusyId(null);
+        await fetch("/api/docs-bump", { method: "POST" });
         await refresh();
     }
 

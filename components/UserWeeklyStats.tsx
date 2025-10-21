@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { weekRange, FormatDecimalsToHours } from "@/utils/date";
+import {
+    weekRange,
+    FormatDecimalsToHours,
+    startOfWeekSunday,
+    endOfWeekSaturday,
+} from "@/utils/date";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -13,21 +18,6 @@ type Stats = {
     bankAvailable: number; // quota_max - billedHours
     quotaMax: number; // quota_max du profil
 };
-
-function startOfWeekSunday(date: Date) {
-    const d = new Date(date);
-    const day = d.getDay(); // 0 = dimanche
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - day);
-    return d;
-}
-function endOfWeekSaturday(date: Date) {
-    const start = startOfWeekSunday(date);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-    return end;
-}
 
 export function UserWeeklyStats({
     className,

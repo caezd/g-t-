@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Search } from "lucide-react";
 import { FormatDecimalsToHours } from "@/utils/date";
 import { UserWeeklyStats } from "../UserWeeklyStats";
+import { cn } from "@/lib/cn";
 
 type UserRole = "manager" | "assistant" | "helper";
 type TeamRow = { role: UserRole | null; client: any | null };
@@ -70,7 +71,7 @@ function sumByRole(
         acc.total += hours;
     }
     for (const k of Object.keys(acc) as (keyof Sum)[])
-        acc[k] = FormatDecimalsToHours(Math.round(Number(acc[k]) * 100) / 100);
+        acc[k] = Math.round(Number(acc[k]) * 100) / 100;
     return acc;
 }
 
@@ -86,13 +87,19 @@ function ClientCard({ c }: { c: any }) {
                 {c.clients_mandats?.length ? (
                     c.clients_mandats.map((m: any, i: number) => {
                         const totals = sumByRole(m.time_entries ?? []);
-                        console.log(m);
                         return (
                             <div className="overflow-x-auto" key={i}>
                                 <h4 className="border-b text-sm font-medium pb-1 flex items-center justify-between">
                                     {m.mandat_types?.description ??
                                         `Mandat #${m.id}`}
-                                    <span className="text-muted-foreground">
+                                    <span
+                                        className={cn(
+                                            "text-muted-foreground",
+                                            totals.total > m.quota_max
+                                                ? " dark:text-red-400 text-red-600"
+                                                : ""
+                                        )}
+                                    >
                                         {m.quota_max} h/max
                                     </span>
                                 </h4>
@@ -107,11 +114,32 @@ function ClientCard({ c }: { c: any }) {
                                     </thead>
                                     <tbody className="divide-y">
                                         <tr key={m.id} className="[&_td]:py-2">
-                                            <td>{totals.manager}</td>
-                                            <td>{totals.assistant}</td>
-                                            <td>{totals.helper}</td>
-                                            <td className="font-medium">
-                                                {totals.total}
+                                            <td>
+                                                {FormatDecimalsToHours(
+                                                    totals.manager
+                                                )}
+                                            </td>
+                                            <td>
+                                                {FormatDecimalsToHours(
+                                                    totals.assistant
+                                                )}
+                                            </td>
+                                            <td>
+                                                {FormatDecimalsToHours(
+                                                    totals.helper
+                                                )}
+                                            </td>
+                                            <td
+                                                className={cn(
+                                                    "font-medium",
+                                                    totals.total > m.quota_max
+                                                        ? " dark:text-red-400 text-red-600"
+                                                        : ""
+                                                )}
+                                            >
+                                                {FormatDecimalsToHours(
+                                                    totals.total
+                                                )}
                                             </td>
                                         </tr>
                                     </tbody>

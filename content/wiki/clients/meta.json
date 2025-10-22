@@ -1,5 +1,6 @@
 {
     "title": "Clients",
-    "description": "Toute la documentation spécifique aux clients",
-    "root": true
+    "description": "Base de connaissance relative aux clients de FocusTDL.",
+    "root": true,
+    "icon": "Home"
 }

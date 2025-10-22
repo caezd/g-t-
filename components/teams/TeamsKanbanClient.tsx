@@ -84,28 +84,29 @@ function ClientCard({ c }: { c: any }) {
             </CardHeader>
             <CardContent className="space-y-3">
                 {c.clients_mandats?.length ? (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="text-left">
-                                <tr className="[&_th]:py-2">
-                                    <th>Mandat</th>
-                                    <th>Chargé</th>
-                                    <th>Adjoint</th>
-                                    <th>Aidant</th>
-                                    <th>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                                {c.clients_mandats.map((m: any) => {
-                                    const totals = sumByRole(
-                                        m.time_entries ?? []
-                                    );
-                                    return (
+                    c.clients_mandats.map((m: any, i: number) => {
+                        const totals = sumByRole(m.time_entries ?? []);
+                        console.log(m);
+                        return (
+                            <div className="overflow-x-auto" key={i}>
+                                <h4 className="border-b text-sm font-medium pb-1 flex items-center justify-between">
+                                    {m.mandat_types?.description ??
+                                        `Mandat #${m.id}`}
+                                    <span className="text-muted-foreground">
+                                        {m.quota_max} h/max
+                                    </span>
+                                </h4>
+                                <table className="w-full text-sm">
+                                    <thead className="text-left font-medium">
+                                        <tr className="[&_th]:py-2">
+                                            <th>Chargé</th>
+                                            <th>Adjoint</th>
+                                            <th>Aidant</th>
+                                            <th>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
                                         <tr key={m.id} className="[&_td]:py-2">
-                                            <td className="max-w-[18rem] truncate">
-                                                {m.mandat_types?.description ??
-                                                    `Mandat #${m.id}`}
-                                            </td>
                                             <td>{totals.manager}</td>
                                             <td>{totals.assistant}</td>
                                             <td>{totals.helper}</td>
@@ -113,11 +114,11 @@ function ClientCard({ c }: { c: any }) {
                                                 {totals.total}
                                             </td>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                                    </tbody>
+                                </table>
+                            </div>
+                        );
+                    })
                 ) : (
                     <p className="text-sm text-muted-foreground">
                         Aucun mandat associé.
@@ -179,7 +180,7 @@ export default function TeamsKanbanClient({ rows }: { rows: TeamRow[] }) {
             </div>
 
             {/* Kanban 3 colonnes */}
-            <div className="grid grid-cols-1 md:grid-cols-3 px-4 py-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 px-4 py-8 flex-1">
                 {columns.map((col) => (
                     <section key={col.key} className="space-y-3 px-4">
                         <div className="flex items-baseline justify-between">

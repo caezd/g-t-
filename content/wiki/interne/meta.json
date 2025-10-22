@@ -1,5 +1,6 @@
 {
     "title": "FocusTDL / Interne",
-    "description": "The description of root folder (optional)",
-    "root": true
+    "description": "Base de connaissance relative aux procédures internes de FocusTDL.",
+    "root": true,
+    "icon": "Home"
 }

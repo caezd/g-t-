@@ -17,7 +17,7 @@ const HomeLayout = async ({ children }: { children: React.ReactNode }) => {
             {is_admin && <AdminAside />}
             <div className="flex flex-col flex-1">
                 <Header />
-                <main className="flex flex-1">{children}</main>
+                <main className="flex flex-1 w-full">{children}</main>
             </div>
         </section>
     );

@@ -2,9 +2,14 @@
 export default function DocsKeyBoundary({
     bump,
     children,
+    ...props
 }: {
     bump: string;
     children: React.ReactNode;
 }) {
-    return <div key={`docs-${bump}`}>{children}</div>;
+    return (
+        <div key={`docs-${bump}`} {...props}>
+            {children}
+        </div>
+    );
 }

@@ -25,6 +25,33 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Check, ChevronsUpDown, Loader2, UserPlus2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Optional: provide sensible default quotas per role (in hours)
+const DEFAULT_ROLE_QUOTAS = {
+    manager: 10,
+    assistant: 6,
+    helper: 3,
+};
+
+// Helper to parse inputs like "1.5", "1,5", "1h30" -> hours (float)
+function parseHours(v) {
+    if (v == null) return null;
+    const s = String(v).trim().toLowerCase();
+    if (!s) return null;
+    // 1h30, 2h, 45m, 1:30
+    const hMatch = s.match(/^(\d+)(?:h|:)?(\d{1,2})?$/i); // 1h30 or 1:30 or 2h
+    if (hMatch) {
+        const h = Number(hMatch[1] || 0);
+        const m = Number(hMatch[2] || 0);
+        return Number((h + m / 60).toFixed(2));
+    }
+    const mOnly = s.match(/^(\d{1,3})\s*m(in)?$/i);
+    if (mOnly) return Number((Number(mOnly[1]) / 60).toFixed(2));
+    // 1,5 -> 1.5
+    const normalized = s.replace(",", ".");
+    const f = Number(normalized);
+    return Number.isFinite(f) ? Number(f.toFixed(2)) : null;
+}
+
 export function TeamDialog({ clientId, onAdded }) {
     const supabase = useMemo(() => createClient(), []);
     const [open, setOpen] = useState(false);
@@ -32,7 +59,21 @@ export function TeamDialog({ clientId, onAdded }) {
     const [query, setQuery] = useState("");
     const [profiles, setProfiles] = useState([]);
     const [selected, setSelected] = useState([]); // [{id, full_name, email}]
-    const [role, setRole] = useState("assistant"); // or "adjoint"
+    const [role, setRole] = useState("assistant"); // manager | assistant | helper
+    const [quotas, setQuotas] = useState({}); // { userId: number|null }
+
+    // When role changes, prefill quotas for already-selected members if missing.
+    useEffect(() => {
+        if (!selected.length) return;
+        setQuotas((prev) => {
+            const next = { ...prev };
+            for (const p of selected) {
+                if (next[p.id] == null)
+                    next[p.id] = DEFAULT_ROLE_QUOTAS[role] ?? null;
+            }
+            return next;
+        });
+    }, [role, selected]);
 
     // Fetch minimal profile list; filter client‑side with CommandInput.
     useEffect(() => {
@@ -59,15 +100,29 @@ export function TeamDialog({ clientId, onAdded }) {
         const q = query.toLowerCase();
         return profiles.filter(
             (p) =>
-                p.full_name.toLowerCase().includes(q) ||
-                p.email.toLowerCase().includes(q)
+                (p.full_name || "").toLowerCase().includes(q) ||
+                (p.email || "").toLowerCase().includes(q)
         );
     }, [profiles, query]);
 
     function toggleSelect(p) {
         setSelected((curr) => {
             const exists = curr.find((x) => x.id === p.id);
-            return exists ? curr.filter((x) => x.id !== p.id) : [...curr, p];
+            let next;
+            if (exists) {
+                next = curr.filter((x) => x.id !== p.id);
+                setQuotas((q) => {
+                    const { [p.id]: _, ...rest } = q;
+                    return rest;
+                });
+            } else {
+                next = [...curr, p];
+                setQuotas((q) => ({
+                    ...q,
+                    [p.id]: q[p.id] ?? DEFAULT_ROLE_QUOTAS[role] ?? null,
+                }));
+            }
+            return next;
         });
     }
 
@@ -79,6 +134,7 @@ export function TeamDialog({ clientId, onAdded }) {
             client_id: clientId,
             user_id: p.id,
             role,
+            quota_max: quotas[p.id] ?? null,
         }));
         const { error } = await supabase
             .from("clients_team")
@@ -88,6 +144,7 @@ export function TeamDialog({ clientId, onAdded }) {
             await fetch("/api/docs-bump", { method: "POST" });
             setOpen(false);
             setSelected([]);
+            setQuotas({});
             if (onAdded) onAdded();
         }
     }
@@ -99,15 +156,16 @@ export function TeamDialog({ clientId, onAdded }) {
                     <UserPlus2 className="mr-2 h-4 w-4" /> Ajouter
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className="sm:max-w-xl">
                 <DialogHeader>
                     <DialogTitle>Ajouter des membres d'équipe</DialogTitle>
                     <DialogDescription>
-                        Sélectionnez des utilisateurs existants et
-                        attribuez-leur un rôle pour ce client.
+                        Sélectionnez des utilisateurs existants, choisissez un
+                        rôle et définissez un quota d'heures maximum
+                        (facultatif) pour chacun.
                     </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-5">
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Rôle</label>
                         <RadioGroup
@@ -118,7 +176,7 @@ export function TeamDialog({ clientId, onAdded }) {
                             <label
                                 className={cn(
                                     "flex items-center gap-2 rounded-lg border p-3",
-                                    role === "charge" && "ring-2 ring-primary"
+                                    role === "manager" && "ring-2 ring-primary"
                                 )}
                             >
                                 <RadioGroupItem value="manager" />
@@ -127,7 +185,8 @@ export function TeamDialog({ clientId, onAdded }) {
                             <label
                                 className={cn(
                                     "flex items-center gap-2 rounded-lg border p-3",
-                                    role === "adjoint" && "ring-2 ring-primary"
+                                    role === "assistant" &&
+                                        "ring-2 ring-primary"
                                 )}
                             >
                                 <RadioGroupItem value="assistant" />
@@ -136,7 +195,7 @@ export function TeamDialog({ clientId, onAdded }) {
                             <label
                                 className={cn(
                                     "flex items-center gap-2 rounded-lg border p-3",
-                                    role === "adjoint" && "ring-2 ring-primary"
+                                    role === "helper" && "ring-2 ring-primary"
                                 )}
                             >
                                 <RadioGroupItem value="helper" />
@@ -203,24 +262,42 @@ export function TeamDialog({ clientId, onAdded }) {
                     </div>
 
                     {!!selected.length && (
-                        <div className="flex flex-wrap gap-2">
-                            {selected.map((p) => (
-                                <Badge
-                                    key={p.id}
-                                    className="border border-zinc-800"
-                                >
-                                    {p.full_name || p.email}
-                                </Badge>
-                            ))}{" "}
-                            se {selected.length > 1 ? "verront" : "verra"}{" "}
-                            attribuer le rôle{" "}
-                            <strong>
-                                {role === "manager"
-                                    ? "Chargé"
-                                    : role === "assistant"
-                                    ? "Adjoint"
-                                    : "Aidant"}
-                            </strong>
+                        <div className="space-y-3">
+                            <div className="text-sm font-medium">
+                                Quotas par membre (en heures)
+                            </div>
+                            <ul className="space-y-2">
+                                {selected.map((p) => (
+                                    <li
+                                        key={p.id}
+                                        className="grid grid-cols-5 items-center gap-3"
+                                    >
+                                        <div className="col-span-3">
+                                            <Badge className="border border-zinc-800">
+                                                {p.full_name || p.email}
+                                            </Badge>
+                                        </div>
+                                        <div className="col-span-2 flex items-center gap-2">
+                                            <Input
+                                                inputMode="decimal"
+                                                placeholder={`${
+                                                    DEFAULT_ROLE_QUOTAS[role] ??
+                                                    "ex. 1.5 ou 1h30"
+                                                }`}
+                                                value={quotas[p.id] ?? ""}
+                                                onChange={(e) =>
+                                                    setQuotas((q) => ({
+                                                        ...q,
+                                                        [p.id]: parseHours(
+                                                            e.target.value
+                                                        ),
+                                                    }))
+                                                }
+                                            />
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     )}
 
@@ -249,11 +326,6 @@ export function TeamDialog({ clientId, onAdded }) {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Usage inside your client page (admin/client/[id]/page.jsx):
-// 1) List the current team
-// 2) Use <TeamDialog clientId={clientId} onAdded={refresh} /> in the Équipe card
-
 export function ClientTeamList({ clientId, initial = [] }) {
     const supabase = useMemo(() => createClient(), []);
     const [rows, setRows] = useState(initial);
@@ -262,7 +334,9 @@ export function ClientTeamList({ clientId, initial = [] }) {
     async function refresh() {
         const { data } = await supabase
             .from("clients_team")
-            .select("id, role, profile:profiles(id, email)")
+            .select(
+                "id, role, quota_max, profile:profiles(id, full_name, email)"
+            )
             .eq("client_id", clientId)
             .order("role", { ascending: true });
         setRows(data || []);
@@ -296,8 +370,13 @@ export function ClientTeamList({ clientId, initial = [] }) {
                     >
                         <div>
                             <div className="font-medium">
-                                {r.profile?.email}
+                                {r.profile.full_name || r.profile?.email}
                             </div>
+                            {r.quota_max != null && (
+                                <div className="text-xs text-muted-foreground">
+                                    Quota: {r.quota_max} h
+                                </div>
+                            )}
                         </div>
                         <div className="flex items-center gap-2">
                             <Badge variant="outline">
@@ -328,48 +407,3 @@ export function ClientTeamList({ clientId, initial = [] }) {
         </div>
     );
 }
-
-// ---------------------------------------------------------------------------
-// HOW TO INTEGRATE (minimal diff):
-// In your server component that fetches a single client, render a client boundary
-// and mount ClientTeamList in the Équipe card body. Example (pseudo):
-// <CardContent>
-//   <ClientTeamList clientId={clientId} />
-// </CardContent>
-// <CardFooter>
-//   {/* TeamDialog is already included inside ClientTeamList */}
-// </CardFooter>
-
-// ---------------------------------------------------------------------------
-// SQL — Migrations you likely need (run in Supabase SQL editor):
-// 1) Enum for role
-//    create type team_role as enum ('charge','adjoint');
-//
-// 2) Team table
-//    create table if not exists clients_team (
-//      id bigserial primary key,
-//      client_id bigint not null references public.clients(id) on delete cascade,
-//      user_id uuid not null references auth.users(id) on delete cascade,
-//      role team_role not null,
-//      created_at timestamptz default now(),
-//      unique (client_id, user_id)
-//    );
-//
-// 3) RLS (adjust to your roles table/logic)
-//    alter table clients_team enable row level security;
-//    create policy "admins can read/write team" on clients_team
-//      for all using (
-//        exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
-//      ) with check (
-//        exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
-//      );
-//    -- Optional: allow members themselves to read (not write)
-//    create policy "members can read team" on clients_team
-//      for select using (auth.uid() = user_id);
-//
-// 4) (Optional) Foreign key from profiles -> auth.users(id) should already exist;
-//    if not, ensure profiles.id is a uuid that mirrors auth.users.id.
-//
-// Notes:
-// - We read users from `profiles` (public) since `auth.users` requires service role/Admin API to list.
-// - If your `profiles` table uses different column names, adapt the select mapping above.

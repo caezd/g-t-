@@ -8,8 +8,11 @@ export default async function AdminEmployeesPage() {
     // Adapte les colonnes à ton schéma `profiles`
     const { data: profiles, error } = await supabase
         .from("profiles")
-        .select("id, full_name, email, role, created_at, is_active")
+        .select(
+            "id, full_name, email, role, created_at, is_active, rate, quota_max, clients_team(*)"
+        )
         .order("full_name", { ascending: true });
+    console.log(profiles);
 
     if (error) {
         // tu peux rendre une UI d’erreur plus fancy si tu veux

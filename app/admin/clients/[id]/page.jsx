@@ -79,15 +79,16 @@ export default async function ClientPage({ params }) {
                             />
                         ))}
                     </div>
-
-                    <Card className="col-span-1 lg:col-start-3">
-                        <CardHeader>
-                            <CardTitle>Équipe</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <ClientTeamList clientId={clientId} />
-                        </CardContent>
-                    </Card>
+                    <div className="col-span-1 lg:col-start-3">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Équipe</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <ClientTeamList clientId={clientId} />
+                            </CardContent>
+                        </Card>
+                    </div>
                 </section>
             </section>
         </>

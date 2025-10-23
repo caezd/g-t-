@@ -141,35 +141,43 @@ export default function EditEmployeeDialog({
 
     async function onSubmit(values: FormValues) {
         try {
+            // 1) Update du profil
             const payload = {
                 full_name: values.full_name,
+                email: values.email, // ⚠️ si email auth.users: gérer via flux supabase auth dédié
                 role: values.role,
                 is_active: values.is_active,
                 quota_max: values.quota_max,
                 rate: values.rate,
             };
-
-            const { error } = await supabase
+            const { error: profileErr } = await supabase
                 .from("profiles")
                 .update(payload)
                 .eq("id", employee.id);
+            if (profileErr) throw profileErr;
 
-            if (error) {
-                console.error(error);
-                toast.error("La mise à jour a échoué.", {
-                    description: error.message,
-                });
-                return;
+            // 2) Upsert des quotas par client
+            if (clients.length > 0) {
+                // on transforme "" → null déjà au niveau des inputs
+                const upserts = clients.map((c) => ({
+                    user_id: employee.id,
+                    client_id: c.client_id,
+                    quota_max: c.quota_max, // null => illimité
+                }));
+
+                const { error: upsertErr } = await supabase
+                    .from("clients_team")
+                    .upsert(upserts, { onConflict: "user_id,client_id" });
+                if (upsertErr) throw upsertErr;
             }
 
             toast.success("Employé mis à jour");
             setOpen(false);
-            // Forcer le refresh (les données viennent de la page server)
             router.refresh();
         } catch (e: any) {
             console.error(e);
-            toast.error("Une erreur est survenue.", {
-                description: e?.message ?? "Inconnue",
+            toast.error("La mise à jour a échoué.", {
+                description: e?.message ?? "Erreur inconnue",
             });
         }
     }

@@ -11,9 +11,9 @@ export default function AdminLayout({ children }) {
     return (
         <section className="relative flex min-h-screen flex-1">
             <AdminAside />
-            <div className="flex flex-1 flex-col">
+            <div className="flex flex-1 flex-col overflow-hidden">
                 <Header />
-                <main className="flex-1">{children}</main>
+                <main className="flex flex-1 overflow-auto">{children}</main>
             </div>
         </section>
     );

@@ -125,8 +125,9 @@ export function ClientPickerRow({ form }) {
 
             const { data, error } = await supabase
                 .from("clients_team")
-                .select("client:clients(id, name)")
+                .select("client:clients(id, name, clients_mandats(*))")
                 .eq("user_id", user.id);
+            // TODO: ajouter un filtre pour n'inclure que les clients actifs (s'ils ont un mandat actif)
 
             if (error) {
                 console.error("Error fetching team clients:", error);

@@ -11,7 +11,7 @@
 
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
-import { CornerDownRight } from "lucide-react";
+import { CornerDownRight, User } from "lucide-react";
 import { Fragment } from "react";
 import { SearchFull } from "@/components/search-full";
 
@@ -106,6 +106,14 @@ interface TimeEntry {
     duration_min?: number | null;
     hours?: number | null; // décimal
 }
+interface ClientTeam {
+    id?: number;
+    client_id: number;
+    user_id?: string | number;
+    quota_max: number | null;
+    deleted_at: string | null;
+    profile?: { full_name?: string | null } | null;
+}
 
 function getDurationMins(te: TimeEntry): number {
     // Essaie plusieurs conventions de colonnes (minutes, duration_min, hours)
@@ -129,7 +137,7 @@ async function loadBible() {
     const { data: clients } = await supabase
         .from<Client>("clients")
         .select(
-            "*, clients_mandats(*, type:mandat_types!inner(description)), clients_team(*)"
+            "*, clients_mandats(*, type:mandat_types!inner(description)), clients_team(*, profile:profiles!inner(*))"
         )
         .order("name", { ascending: true });
 
@@ -210,11 +218,11 @@ export default async function BiblePage() {
 
             {/* TABLEAU DETAILLE PAR CLIENT */}
 
-            <section className="border-t border-zinc-200 dark:border-zinc-800 w-full">
+            <section className="border-zinc-200 dark:border-zinc-800 w-full">
                 <div className="mt-4">
                     <div
                         role="table"
-                        className="grid [grid-template-columns:minmax(14rem,1.3fr)_repeat(2,10rem)_repeat(2,12rem)_repeat(2,10rem)_repeat(2,10rem)] text-sm overflow-auto"
+                        className="border grid [grid-template-columns:minmax(14rem,1.3fr)_repeat(2,10rem)_repeat(2,12rem)_repeat(2,10rem)_repeat(2,10rem)] text-sm overflow-auto"
                     >
                         {/* En-tête */}
                         <div
@@ -222,16 +230,16 @@ export default async function BiblePage() {
                             className="contents bg-zinc-50 dark:bg-zinc-900/40 font-medium divide-x divide-y"
                         >
                             <div role="columnheader" className="px-4 py-3">
-                                Client / Mandat
+                                Client/Mandat
                             </div>
                             <div role="columnheader" className="px-4 py-3">
-                                Quota équipes
+                                Quota (h)
                             </div>
                             <div role="columnheader" className="px-4 py-3">
-                                Quota mandats
+                                Taux ($)
                             </div>
                             <div role="columnheader" className="px-4 py-3">
-                                $ mensuel (mandats)
+                                Coûtant ($)
                             </div>
                             <div role="columnheader" className="px-4 py-3">
                                 Taux horaire (mandats)
@@ -252,10 +260,7 @@ export default async function BiblePage() {
 
                         {/* Lignes */}
                         {clients.map((r) => (
-                            <div
-                                key={r.client_id}
-                                className="contents border-t divide-x "
-                            >
+                            <div key={r.id} className="contents divide-x">
                                 {/* Ligne principale */}
                                 <div className="px-4 py-3 font-medium">
                                     {r.name}
@@ -284,7 +289,7 @@ export default async function BiblePage() {
                                 </div>
 
                                 {/* Sous-ligne alignée (subgrid) */}
-                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/20 divide-x">
+                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/20 divide-x text-xs">
                                     {/* cellule 1 (indent + label) */}
                                     {r.clients_mandats &&
                                         r.clients_mandats.map((mandat, idx) => {
@@ -309,7 +314,38 @@ export default async function BiblePage() {
                                                     </div>
                                                     {/* Les 8 autres colonnes restent alignées */}
                                                     <div className="pb-4">
-                                                        {/* détail col 2 */}
+                                                        {mandat.quota_max ?? 0}
+                                                        {mandat.quota_max -
+                                                            r.clients_team.reduce(
+                                                                (acc, m) =>
+                                                                    acc +
+                                                                    (m.quota_max ??
+                                                                        0),
+                                                                0
+                                                            ) <
+                                                            0 && (
+                                                            <span
+                                                                className={cn(
+                                                                    "ml-1 text-red-500 font-medium"
+                                                                )}
+                                                            >
+                                                                (
+                                                                <>
+                                                                    {r.clients_team.reduce(
+                                                                        (
+                                                                            acc,
+                                                                            m
+                                                                        ) =>
+                                                                            acc +
+                                                                            (m.quota_max ??
+                                                                                0),
+                                                                        0
+                                                                    ) -
+                                                                        mandat.quota_max}
+                                                                </>
+                                                                )
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="pb-4">
                                                         {/* détail col 3 */}
@@ -335,6 +371,61 @@ export default async function BiblePage() {
                                                 </Fragment>
                                             );
                                         })}
+                                </div>
+                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/10 divide-x">
+                                    {r.clients_team?.map((m, idx) => (
+                                        <div
+                                            key={
+                                                m.id ??
+                                                `${r.id}-t-${m.user_id}-${idx}`
+                                            }
+                                            className="contents"
+                                        >
+                                            {/* Colonne 1 : nom de l’employé (ou user_id), indenté */}
+                                            <div className="px-4 pb-3 pl-12 flex items-center gap-2">
+                                                <User
+                                                    className="inline"
+                                                    size={16}
+                                                />
+                                                <span className="text-xs text-muted-foreground">
+                                                    {m.profile?.full_name ??
+                                                        `Employé #${
+                                                            m.user_id ?? idx + 1
+                                                        }`}
+                                                </span>
+                                            </div>
+
+                                            {/* Colonnes 2..9 alignées (exemples) */}
+                                            <div className="pb-3">
+                                                {/* Quota équipes (par employé) */}
+                                                <span className="text-xs">
+                                                    {m.quota_max ?? 0} h
+                                                </span>
+                                            </div>
+                                            <div className="pb-3">
+                                                {m.profile?.rate ?? 0}
+                                            </div>
+                                            <div className="pb-3">
+                                                {m.quota_max * m.profile?.rate}{" "}
+                                                $
+                                            </div>
+                                            <div className="pb-3">
+                                                {/* $ horaire (n/a employé) */}
+                                            </div>
+                                            <div className="pb-3">
+                                                {/* Temps semaine (si tu veux filtrer par user_id plus tard) */}
+                                            </div>
+                                            <div className="pb-3">
+                                                {/* Temps mois */}
+                                            </div>
+                                            <div className="pb-3">
+                                                {/* Écart semaine */}
+                                            </div>
+                                            <div className="pb-3">
+                                                {/* Écart mois */}
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         ))}

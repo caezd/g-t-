@@ -11,7 +11,7 @@ import {
     CardFooter,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Calendar as CalendarIcon } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, Ban } from "lucide-react";
 import {
     Popover,
     PopoverTrigger,
@@ -66,6 +66,7 @@ export function MandateTimeEntriesCard({
         id: number;
         description?: string | null;
         mandat_type_id: number | null;
+        deleted_at: string | null;
     };
 }) {
     // supabase client stable
@@ -252,6 +253,12 @@ export function MandateTimeEntriesCard({
             </CardContent>
 
             <CardFooter className="flex items-center justify-between">
+                {mandat.deleted_at && (
+                    <div className="text-red-600 dark:text-red-400 flex items-center gap-1 text-sm">
+                        <Ban size={15} />
+                        Mandat archivé depuis le {fmtDateISO(mandat.deleted_at)}
+                    </div>
+                )}
                 <div className="text-sm font-medium ml-auto">
                     Total cumulé&nbsp;: {fmtHoursDecimal(totalHours)}{" "}
                     <span className="text-muted-foreground">

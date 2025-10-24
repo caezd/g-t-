@@ -289,7 +289,7 @@ export default async function BiblePage() {
                                 </div>
 
                                 {/* Sous-ligne alignée (subgrid) */}
-                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/20 divide-x text-xs">
+                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/20 divide-x text-sm">
                                     {/* cellule 1 (indent + label) */}
                                     {r.clients_mandats &&
                                         r.clients_mandats.map((mandat, idx) => {
@@ -305,7 +305,7 @@ export default async function BiblePage() {
                                                             className="inline"
                                                             size={16}
                                                         />
-                                                        <span className="text-xs text-muted-foreground">
+                                                        <span className="text-muted-foreground">
                                                             {
                                                                 mandat.type
                                                                     .description
@@ -351,7 +351,17 @@ export default async function BiblePage() {
                                                         {/* détail col 3 */}
                                                     </div>
                                                     <div className="pb-4">
-                                                        {/* détail col 4 */}
+                                                        {r.clients_team.reduce(
+                                                            (acc, m) =>
+                                                                acc +
+                                                                (m.quota_max ??
+                                                                    0) *
+                                                                    (m.profile
+                                                                        ?.rate ??
+                                                                        0),
+                                                            0
+                                                        )}{" "}
+                                                        $
                                                     </div>
                                                     <div className="pb-4">
                                                         {/* détail col 5 */}
@@ -372,7 +382,7 @@ export default async function BiblePage() {
                                             );
                                         })}
                                 </div>
-                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/10 divide-x">
+                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/10 divide-x text-xs">
                                     {r.clients_team?.map((m, idx) => (
                                         <div
                                             key={
@@ -387,7 +397,7 @@ export default async function BiblePage() {
                                                     className="inline"
                                                     size={16}
                                                 />
-                                                <span className="text-xs text-muted-foreground">
+                                                <span className=" text-muted-foreground">
                                                     {m.profile?.full_name ??
                                                         `Employé #${
                                                             m.user_id ?? idx + 1

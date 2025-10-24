@@ -270,7 +270,7 @@ export default function EditEmployeeDialog({
                     <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                             <Label htmlFor="quota_max">
-                                Quota max (heures)
+                                Quota max (heures/s)
                             </Label>
                             <Input
                                 id="quota_max"

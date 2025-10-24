@@ -480,24 +480,26 @@ export function TimeEntryForm({ onCreated }) {
     });
 
     async function onSubmitHandler(values) {
-        const profile_id = await supabase.auth
-            .getUser()
-            .then(({ data: { user } }) => user?.id);
+        const {
+            data: { user },
+        } = await supabase.auth.getUser();
+        const profile_id = user?.id;
+        if (!profile_id) return;
 
-        // récupérer le role dans clients_team
-        const { data: teamData, error: teamError } = await supabase
+        // Récupérer le rôle dans clients_team (tolérant: peut être null)
+        const { data: teamData } = await supabase
             .from("clients_team")
             .select("role")
             .eq("user_id", profile_id)
             .eq("client_id", values.client_id)
-            .single();
+            .maybeSingle();
 
-        // Insert la nouvelle entrée de temps
-        const { data, error } = await supabase
+        // 1) INSERT minimal pour obtenir l'id
+        const { data: inserted, error: insertError } = await supabase
             .from("time_entries")
             .insert([
                 {
-                    doc: values.doc,
+                    doc: values.doc, // c’est déjà un Date via RHF/zod
                     billed_amount: toHoursDecimal(values.billed_amount),
                     client_id: values.client_id,
                     details: values.details,
@@ -507,14 +509,42 @@ export function TimeEntryForm({ onCreated }) {
                     role: teamData?.role || null,
                 },
             ])
-            .select()
+            .select("id") // ⚠️ juste l'id pour être sûr de ne rien filtrer
             .single();
-        if (error) {
-            console.error(error);
+
+        if (insertError || !inserted) {
+            console.error(insertError);
             return;
         }
+
+        // 2) SELECT enrichi de la nouvelle ligne avec les relations
+        //    (LEFT joins implicites: pas de !inner)
+        const { data: full, error: selectError } = await supabase
+            .from("time_entries")
+            .select(
+                `*,
+                client:clients (*),
+                mandat:clients_mandats (
+                    *,
+                    mandat_types (*)
+                ),
+                clients_services (*)
+                `
+            )
+            .eq("id", inserted.id)
+            .maybeSingle();
+
+        if (selectError) {
+            console.error(selectError);
+            // Fallback: envoie au moins la row de base si besoin
+            onCreated({ id: inserted.id });
+            form.reset();
+            return;
+        }
+
+        // OK: renvoyer au parent l’entrée complète (avec mandat_types, etc.)
+        onCreated(full);
         form.reset();
-        onCreated(data);
     }
 
     return (

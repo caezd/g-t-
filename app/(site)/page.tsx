@@ -3,11 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { TimeEntryForm } from "@/components/forms/TimeEntryForm";
 import { UserWeeklyStats } from "@/components/UserWeeklyStats";
 import { createClient } from "@/lib/supabase/client";
+import { EditTimeEntryDialog } from "@/components/forms/EditTimeEntryDialog";
 
 import { cn } from "@/lib/utils";
 
 import { getDateWeek, weekRange, FormatDecimalsToHours } from "@/utils/date";
-import { DollarSign, Handshake } from "lucide-react";
+import { DollarSign, Handshake, Pencil } from "lucide-react";
 
 function startOfWeekSunday(date: Date) {
     const d = new Date(date);
@@ -28,24 +29,41 @@ function groupEntriesByWeek(entries: any[]) {
         string,
         { start: Date; end: Date; items: any[]; total: number }
     >();
+
     for (const e of entries) {
-        const doc = new Date(e.doc);
+        const doc = safeDate(e.doc);
+        if (!doc) continue; // on ignore les entrées sans date valide
+
         const start = startOfWeekSunday(doc);
         const end = endOfWeekSaturday(doc);
-        const key = start.toISOString().slice(0, 10); // yyyy-mm-dd du dimanche
+        const key = start.toISOString().slice(0, 10); // ok car start est valide
+
         const billed =
             typeof e.billed_amount === "number"
                 ? e.billed_amount
-                : parseFloat(e.billed_amount ?? "0");
+                : parseFloat(
+                      (e.billed_amount ?? "0").toString().replace(",", ".")
+                  );
+
         if (!map.has(key)) map.set(key, { start, end, items: [], total: 0 });
         const g = map.get(key)!;
         g.items.push(e);
-        g.total += billed || 0;
+        g.total += isNaN(billed) ? 0 : billed;
     }
-    // ordonner par semaine la plus récente en premier
+
     return [...map.values()].sort(
         (a, b) => b.start.getTime() - a.start.getTime()
     );
+}
+
+function safeDate(input: unknown): Date | null {
+    if (input instanceof Date)
+        return isNaN(input.getTime()) ? null : new Date(input);
+    if (typeof input === "string" || typeof input === "number") {
+        const d = new Date(input);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
 }
 
 function IconByAbbreviation(abbr) {
@@ -61,12 +79,23 @@ function IconByAbbreviation(abbr) {
     }
 }
 
-function TimeEntry({ index, entries }) {
+function TimeEntry({
+    index,
+    entries,
+    onUpdated,
+}: {
+    index: number;
+    entries: any[];
+    onUpdated: (r: any) => void;
+}) {
     const [entry, setEntry] = useState({});
+    const [open, setOpen] = useState(false);
     useEffect(() => {
         setEntry(entries[index]);
     }, [entries, index]);
-    const { details, doc, client, mandat } = entry;
+    const { details, mandat } = entry;
+
+    const docDate = safeDate(entry?.doc);
 
     return (
         <li className="relative flex gap-x-4">
@@ -86,22 +115,47 @@ function TimeEntry({ index, entries }) {
             >
                 <div
                     className={cn(
-                        !mandat &&
-                            "size-2 bg-zinc-300 dark:bg-zinc-800 rounded-full ring-1 ring-zinc-400 dark:ring-zinc-800",
-                        mandat && "size-6 bg-accent-400 rounded-full flex "
+                        "relative flex size-6 flex-none items-center justify-center bg-zinc-50 dark:bg-zinc-950",
+                        details && "mt-3"
                     )}
                 >
-                    {mandat && mandat.mandat_types && (
-                        <div className="flex flex-1 items-center justify-center text-xs ">
-                            {IconByAbbreviation(
-                                mandat.mandat_types.description
-                                    .split(" ")
-                                    .map((word) => word[0])
-                                    .join("")
-                                    .toUpperCase()
-                            )}
-                        </div>
-                    )}
+                    <EditTimeEntryDialog
+                        entry={entry}
+                        onUpdated={(updated) => {
+                            onUpdated?.(updated); // au besoin pour remonter dans la page
+                        }}
+                        onDeleted={(deletedId) => {
+                            onUpdated?.({ __deleted: deletedId });
+                        }}
+                        trigger={
+                            <button
+                                type="button"
+                                aria-label="Modifier cette entrée de temps"
+                                className={cn(
+                                    "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent-400 rounded-full relative",
+                                    !mandat &&
+                                        "size-2 bg-zinc-300 dark:bg-zinc-800 rounded-full ring-1 ring-zinc-400 dark:ring-zinc-800",
+                                    mandat &&
+                                        "size-6 bg-accent-400 rounded-full flex group"
+                                )}
+                            >
+                                {mandat && mandat.mandat_types && (
+                                    <div className="flex flex-1 items-center justify-center text-xs group-hover:opacity-0 transition-opacity">
+                                        {IconByAbbreviation(
+                                            mandat.mandat_types.description
+                                                .split(" ")
+                                                .map((word: string) => word[0])
+                                                .join("")
+                                                .toUpperCase()
+                                        )}
+                                    </div>
+                                )}
+                                <div className="flex flex-1 items-center justify-center text-xs transition-opacity opacity-0 group-hover:opacity-100 absolute w-full h-full">
+                                    <Pencil size="15" />
+                                </div>
+                            </button>
+                        }
+                    />
                 </div>
             </div>
             <div
@@ -121,16 +175,23 @@ function TimeEntry({ index, entries }) {
                             {entry?.clients_services?.name})
                         </span>
                     </div>
+
                     <time
-                        dateTime={entry.doc}
+                        dateTime={docDate ? docDate.toISOString() : undefined}
                         className="text-[.75rem] leading-5 font-medium text-zinc-500"
                     >
-                        {getDateWeek(new Date(entry.doc)).day}{" "}
-                        {new Date(entry.doc).toLocaleDateString("fr-FR", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                        })}
+                        {docDate ? (
+                            <>
+                                {getDateWeek(docDate).day}{" "}
+                                {docDate.toLocaleDateString("fr-FR", {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                })}
+                            </>
+                        ) : (
+                            "Date invalide"
+                        )}
                     </time>
                 </header>
                 {entry.details && (
@@ -155,24 +216,51 @@ export default function HomePage() {
             const {
                 data: { user },
             } = await supabase.auth.getUser();
+
             const { data, error } = await supabase
                 .from("time_entries")
                 .select(
-                    "*, client:clients!inner(*), mandat:clients_mandats(*, mandat_types!inner(*)), clients_services!inner(*)"
+                    "*, client:clients(*), mandat:clients_mandats(*, mandat_types(*)), clients_services(*)"
                 )
                 .eq("profile_id", user.id)
                 .order("doc", { ascending: false })
                 .limit(100);
+
             if (error) throw error;
             setEntries(data || []);
         }
+
         fetchEntries();
-    }, [entries, supabase]);
+    }, [supabase]);
 
     function handleEntryCreated(newEntry) {
         setStatsNonce((n) => n + 1);
         setEntries((prevEntries) => [newEntry, ...prevEntries]);
     }
+
+    const handleEntryPatched = (patch: any) => {
+        setEntries((prev) => {
+            // suppression via onDeleted
+            if (patch?.__deleted)
+                return prev.filter((e) => e.id !== patch.__deleted);
+
+            // remplacement par id (assure l’égalité de type)
+            const pid = Number(patch.id);
+            let found = false;
+            const next = prev.map((e) => {
+                const eid = Number(e.id);
+                if (eid === pid) {
+                    found = true;
+                    // merge pour ne pas perdre de champs que ton SELECT n'aurait pas renvoyés
+                    return { ...e, ...patch };
+                }
+                return e;
+            });
+            if (!found) next.unshift(patch); // au cas où l’item n’était pas en mémoire
+            setStatsNonce((n) => n + 1);
+            return next;
+        });
+    };
     return (
         <>
             <div className="flex-4 border-zinc-200 dark:border-zinc-800 flex flex-col">
@@ -206,6 +294,7 @@ export default function HomePage() {
                                         key={entry.id ?? i}
                                         index={i}
                                         entries={g.items}
+                                        onUpdated={handleEntryPatched}
                                     />
                                 ))}
                             </ul>

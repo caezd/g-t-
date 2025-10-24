@@ -65,6 +65,7 @@ function useClientMandates(supabase, clientId) {
                 .from("clients_mandats")
                 .select("*, mandat_types(*)")
                 .eq("client_id", clientId)
+                .is("deleted_at", null)
                 .order("id", { ascending: true });
 
             if (alive) {
@@ -125,15 +126,17 @@ export function ClientPickerRow({ form }) {
 
             const { data, error } = await supabase
                 .from("clients_team")
-                .select("client:clients(id, name, clients_mandats(*))")
-                .eq("user_id", user.id);
+                .select("client:clients(id, name, clients_mandats!inner(*))")
+                .eq("user_id", user.id)
+                .is("client.clients_mandats.deleted_at", null)
+                .order("name", { referencedTable: "client" });
             // TODO: ajouter un filtre pour n'inclure que les clients actifs (s'ils ont un mandat actif)
-
             if (error) {
                 console.error("Error fetching team clients:", error);
                 setClients([]);
                 return;
             }
+            console.log("Fetched team clients:", data);
 
             const unique = new Map();
             for (const row of data ?? []) {
@@ -488,8 +491,6 @@ export function TimeEntryForm({ onCreated }) {
             .eq("user_id", profile_id)
             .eq("client_id", values.client_id)
             .single();
-
-        console.log("teamData", teamData, teamError);
 
         // Insert la nouvelle entrée de temps
         const { data, error } = await supabase

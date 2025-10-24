@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
+import { format, set } from "date-fns";
+import { fr } from "date-fns/locale";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +19,12 @@ import {
     DialogFooter,
     DialogClose,
 } from "@/components/ui/dialog";
+import {
+    Popover,
+    PopoverContent,
+    PopoverClose,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +42,14 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+import {
+    toHoursDecimal,
+    formatHoursHuman,
+    dateAtNoonLocal,
+} from "@/utils/date";
+import { Calendar } from "../ui/calendar";
+import { CalendarIcon } from "lucide-react";
+
 type EditTimeEntryDialogProps = {
     /** L’entrée à éditer */
     entry: any;
@@ -50,7 +66,7 @@ type EditTimeEntryDialogProps = {
 type FormValues = {
     billed_amount: string; // tu stockes décimal; on manipule en string pour éviter des NaN
     details?: string;
-    doc: string; // ISO date (yyyy-mm-dd) ou datetime-local si tu préfères
+    doc: Date; // ISO date (yyyy-mm-dd) ou datetime-local si tu préfères
 };
 
 export function EditTimeEntryDialog({
@@ -63,36 +79,52 @@ export function EditTimeEntryDialog({
     const supabase = createClient();
     const [open, setOpen] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
+    const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
     const initialValues = React.useMemo(
         () => ({
             billed_amount:
-                entry?.billed_amount?.toString?.() ??
-                (entry?.billed_amount === 0 ? "0" : ""),
+                formatHoursHuman(
+                    typeof entry?.billed_amount === "number"
+                        ? entry.billed_amount
+                        : Number(entry?.billed_amount)
+                ) || "",
             details: entry?.details ?? "",
-            doc: entry?.doc
-                ? new Date(entry.doc).toISOString().slice(0, 10)
-                : "",
+            doc: entry?.doc ? dateAtNoonLocal(new Date(entry.doc)) : new Date(),
         }),
         [entry?.id] // ⚠️ dépend UNIQUEMENT de l'id
     );
 
-    const { register, handleSubmit, reset } = useForm<FormValues>({
-        defaultValues: initialValues,
-        resetOptions: { keepDirty: true, keepDirtyValues: true },
-    });
+    const { register, handleSubmit, reset, watch, control } =
+        useForm<FormValues>({
+            defaultValues: initialValues,
+            resetOptions: { keepDirty: true, keepDirtyValues: true },
+        });
+    const hoursRaw = watch("billed_amount");
+    const calendarValue = watch("doc");
+    const field = {
+        value: calendarValue
+            ? typeof calendarValue === "string"
+                ? new Date(calendarValue)
+                : calendarValue
+            : new Date(),
+    };
+    const hoursOk = !Number.isNaN(toHoursDecimal(hoursRaw));
 
     // quand le dialog s’ouvre/ferme, sync le form avec la dernière entry
     useEffect(() => {
         if (open) {
             reset({
                 billed_amount:
-                    entry?.billed_amount?.toString?.() ??
-                    (entry?.billed_amount === 0 ? "0" : ""),
+                    formatHoursHuman(
+                        typeof entry?.billed_amount === "number"
+                            ? entry.billed_amount
+                            : Number(entry?.billed_amount)
+                    ) || "",
                 details: entry?.details ?? "",
                 doc: entry?.doc
-                    ? new Date(entry.doc).toISOString().slice(0, 10)
-                    : "",
+                    ? dateAtNoonLocal(new Date(entry.doc))
+                    : new Date(),
             });
         }
     }, [open, entry, reset]);
@@ -104,15 +136,14 @@ export function EditTimeEntryDialog({
             const oldYmd = entry?.doc
                 ? new Date(entry.doc).toISOString().slice(0, 10)
                 : "";
+            const newYmd = values.doc
+                ? values.doc.toISOString().slice(0, 10)
+                : "";
             const nextDoc =
-                values.doc && values.doc !== oldYmd
-                    ? new Date(values.doc + "T12:00:00") // 12:00 locale = anti-glissement
-                    : entry.doc;
+                newYmd && newYmd !== oldYmd ? values.doc : entry.doc;
 
             // sécuriser le décimal
-            const billedNum = parseFloat(
-                (values.billed_amount || "0").replace(",", ".")
-            );
+            const billedNum = toHoursDecimal(values.billed_amount);
             if (Number.isNaN(billedNum)) {
                 throw new Error("Montant facturé invalide.");
             }
@@ -197,23 +228,67 @@ export function EditTimeEntryDialog({
                 >
                     <div className="grid gap-2">
                         <Label htmlFor="doc">Date</Label>
-                        <Input
-                            id="doc"
-                            type="date"
-                            {...register("doc", { required: true })}
-                        />
+                        <Popover
+                            open={isCalendarOpen}
+                            onOpenChange={setIsCalendarOpen}
+                        >
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                        " pl-3 text-left font-normal",
+                                        !field.value && "text-muted-foreground"
+                                    )}
+                                >
+                                    {field.value || new Date() ? (
+                                        format(field.value, "PPP", {
+                                            locale: fr,
+                                        })
+                                    ) : (
+                                        <span>Choisir une date</span>
+                                    )}
+                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                                className="w-auto p-0"
+                                align="start"
+                            >
+                                <Controller
+                                    control={control}
+                                    name="doc"
+                                    render={({
+                                        field: { value, onChange, onBlur },
+                                    }) => (
+                                        <Calendar
+                                            mode="single"
+                                            selected={value ?? undefined}
+                                            onSelect={(d) => {
+                                                onChange(
+                                                    d
+                                                        ? dateAtNoonLocal(d)
+                                                        : null
+                                                );
+                                                setIsCalendarOpen(false);
+                                            }}
+                                            // onBlur si besoin
+                                        />
+                                    )}
+                                />
+                            </PopoverContent>
+                        </Popover>
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="billed_amount">Heures (décimal)</Label>
+                        <Label htmlFor="billed_amount">Temps facturé</Label>
                         <Input
                             id="billed_amount"
-                            placeholder="1.5"
-                            inputMode="decimal"
+                            placeholder="1h30"
+                            inputMode="text"
                             {...register("billed_amount", { required: true })}
                         />
                         <p className="text-[0.8rem] text-muted-foreground">
-                            Exemple: 1.5 = 1h30
+                            Formats: 1h30 · 1:30 · 90m · 1.5
                         </p>
                     </div>
 
@@ -272,7 +347,7 @@ export function EditTimeEntryDialog({
                     <Button
                         type="submit"
                         form="time-entry-edit-form"
-                        disabled={loading}
+                        disabled={loading || !hoursOk}
                     >
                         {loading ? "En cours…" : "Enregistrer"}
                     </Button>

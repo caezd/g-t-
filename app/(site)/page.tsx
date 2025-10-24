@@ -241,8 +241,10 @@ export default function HomePage() {
     const handleEntryPatched = (patch: any) => {
         setEntries((prev) => {
             // suppression via onDeleted
-            if (patch?.__deleted)
+            if (patch?.__deleted) {
+                setStatsNonce((n) => n + 1);
                 return prev.filter((e) => e.id !== patch.__deleted);
+            }
 
             // remplacement par id (assure l’égalité de type)
             const pid = Number(patch.id);
@@ -256,8 +258,8 @@ export default function HomePage() {
                 }
                 return e;
             });
-            if (!found) next.unshift(patch); // au cas où l’item n’était pas en mémoire
             setStatsNonce((n) => n + 1);
+            if (!found) next.unshift(patch); // au cas où l’item n’était pas en mémoire
             return next;
         });
     };

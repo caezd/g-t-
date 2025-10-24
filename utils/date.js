@@ -44,43 +44,41 @@ export function FormatDecimalsToHours(floatHours) {
 }
 
 export function toHoursDecimal(input) {
-    if (input == null || input === "") return undefined;
-    if (typeof input === "number" && !Number.isNaN(input)) return input;
+    if (typeof input === "number") return input;
+    if (!input) return NaN;
+    const s = String(input).trim().toLowerCase().replace(",", "."); // 1,5 -> 1.5
+    // "90m"
+    const m = s.match(/^(\d+(?:\.\d+)?)\s*m(in)?$/);
+    if (m) return Number(m[1]) / 60;
 
-    const raw = String(input).trim().toLowerCase();
-
-    // Normaliser la virgule décimale -> point
-    const s = raw.replace(",", ".");
-
-    // cas "1.5h" ou "1.5" (heures décimales)
-    let m = s.match(/^(-?\d+(?:\.\d+)?)\s*h?$/);
-    if (m) return Number(m[1]);
-
-    // cas "1h30" (ou "2h05")
-    m = s.match(/^(-?\d+)\s*h\s*(\d{1,2})$/);
-    if (m) {
-        const h = Number(m[1]);
-        const minutes = Number(m[2]);
-        return h + minutes / 60;
+    // "1h30" / "1 h 30"
+    const hMatch = s.match(/^(\d+(?:\.\d+)?)\s*h(?:\s*(\d{1,2}))?$/);
+    if (hMatch) {
+        const h = Number(hMatch[1]);
+        const mins = hMatch[2] ? Number(hMatch[2]) : 0;
+        return h + mins / 60;
     }
 
-    // cas "1:30"
-    m = s.match(/^(-?\d+)\s*:\s*(\d{1,2})$/);
-    if (m) {
-        const h = Number(m[1]);
-        const minutes = Number(m[2]);
-        return h + minutes / 60;
+    // "1:30"
+    const cMatch = s.match(/^(\d+):(\d{1,2})$/);
+    if (cMatch) {
+        const h = Number(cMatch[1]);
+        const mins = Number(cMatch[2]);
+        return h + mins / 60;
     }
 
-    // cas "90m", "45 min", "30mins"
-    m = s.match(/^(-?\d+(?:\.\d+)?)\s*m(?:in(?:s)?)?$/);
-    if (m) {
-        const minutes = Number(m[1]);
-        return minutes / 60;
-    }
+    // "1.5" (déjà décimal)
+    const n = Number(s);
+    return Number.isFinite(n) ? n : NaN;
+}
 
-    // Rien de reconnu
-    return undefined;
+export function formatHoursHuman(decimal) {
+    if (decimal == null || Number.isNaN(decimal)) return "";
+    const minsTotal = Math.round(decimal * 60);
+    const h = Math.floor(minsTotal / 60);
+    const m = minsTotal % 60;
+    if (m === 0) return `${h}h`;
+    return `${h}h${String(m).padStart(2, "0")}`;
 }
 
 export function startOfWeekSunday(date) {
@@ -96,4 +94,13 @@ export function endOfWeekSaturday(date) {
     end.setDate(start.getDate() + 6);
     end.setHours(23, 59, 59, 999);
     return end;
+}
+
+export function dateAtNoonLocal(d) {
+    const nd = new Date(d);
+    nd.setHours(12, 0, 0, 0);
+    return nd;
+}
+export function ymdFromDate(d) {
+    return d ? d.toISOString().slice(0, 10) : "";
 }

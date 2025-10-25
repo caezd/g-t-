@@ -49,6 +49,7 @@ import {
 } from "@/utils/date";
 import { Calendar } from "../ui/calendar";
 import { CalendarIcon } from "lucide-react";
+import { toast } from "sonner";
 
 type EditTimeEntryDialogProps = {
     /** L’entrée à éditer */

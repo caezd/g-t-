@@ -7,6 +7,7 @@ import { ShieldUser } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { SearchFull } from "@/components/search-full";
 import EditEmployeeDialog from "./EditEmployeeDialog";
+import Link from "next/link";
 
 type Employee = {
     id: string;
@@ -161,7 +162,11 @@ export default function EmployeesTable({
                                             >
                                                 <td className="p-4 flex flex-col justify-center">
                                                     <div className="font-medium truncate">
-                                                        {e.full_name ?? "—"}
+                                                        <Link
+                                                            href={`/admin/employees/${e.id}`}
+                                                        >
+                                                            {e.full_name ?? "—"}
+                                                        </Link>
                                                     </div>
                                                     <div className="text-muted-foreground text-sm truncate">
                                                         {e.email ?? "—"}

@@ -1,6 +1,8 @@
 import NewEmployeeDialog from "@/components/admin/employees/NewEmployeeDialog";
 import EmployeesTable from "@/components/admin/employees/EmployeesTable";
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 export default async function AdminEmployeesPage() {
     const supabase = await createClient();
@@ -29,6 +31,11 @@ export default async function AdminEmployeesPage() {
                         </h1>
                     </div>
                     <div className="flex mt-4 md:mt-0 md:ml-4">
+                        <Link href="/admin/time-entries" className="mr-2">
+                            <Button variant="ghost">
+                                Traiter les feuilles de temps
+                            </Button>
+                        </Link>
                         <NewEmployeeDialog />
                     </div>
                 </div>

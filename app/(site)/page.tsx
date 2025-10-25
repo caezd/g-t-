@@ -97,6 +97,8 @@ function TimeEntry({
 
     const docDate = safeDate(entry?.doc);
 
+    const canEdit = entry.is_closed === false;
+
     return (
         <li className="relative flex gap-x-4">
             <div
@@ -131,13 +133,21 @@ function TimeEntry({
                             <button
                                 type="button"
                                 aria-label="Modifier cette entrée de temps"
+                                disabled={!canEdit}
                                 className={cn(
                                     "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent-400 rounded-full relative",
                                     !mandat &&
                                         "size-2 bg-zinc-300 dark:bg-zinc-800 rounded-full ring-1 ring-zinc-400 dark:ring-zinc-800",
                                     mandat &&
-                                        "size-6 bg-accent-400 rounded-full flex group"
+                                        "size-6 bg-accent-400 rounded-full flex",
+                                    canEdit && "cursor-pointer group",
+                                    !canEdit && "opacity-50 cursor-not-allowed"
                                 )}
+                                title={
+                                    !canEdit
+                                        ? "Feuille de temps fermée, modification impossible"
+                                        : undefined
+                                }
                             >
                                 {mandat && mandat.mandat_types && (
                                     <div className="flex flex-1 items-center justify-center text-xs group-hover:opacity-0 transition-opacity">

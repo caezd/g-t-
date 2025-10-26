@@ -2,5 +2,11 @@
     "title": "FocusTDL / Interne",
     "description": "Base de connaissance relative aux procédures internes de FocusTDL.",
     "root": true,
-    "icon": "Home"
+    "pages": [
+        "index",
+        "---Outils---",
+        "...outils",
+        "---Procédures---",
+        "---Modèles---"
+    ]
 }

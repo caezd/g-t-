@@ -1,9 +1,86 @@
 // @ts-nocheck -- skip type checking
-import * as docs_4 from "../content/wiki/clients/fondation-fais/index.mdx?collection=docs&hash=1761140399855"
-import * as docs_3 from "../content/wiki/clients/clic-montreal/index.mdx?collection=docs&hash=1761140399855"
-import * as docs_2 from "../content/wiki/interne/outils/feuille-de-temps.mdx?collection=docs&hash=1761140399855"
-import * as docs_1 from "../content/wiki/clients/document.mdx?collection=docs&hash=1761140399855"
-import * as docs_0 from "../content/wiki/interne/index.mdx?collection=docs&hash=1761140399855"
-import { _runtime } from "fumadocs-mdx/runtime/next"
-import * as _source from "../source.config"
-export const docs = _runtime.docs<typeof _source.docs>([{ info: {"path":"interne/index.mdx","fullPath":"content\\wiki\\interne\\index.mdx"}, data: docs_0 }, { info: {"path":"clients/document.mdx","fullPath":"content\\wiki\\clients\\document.mdx"}, data: docs_1 }, { info: {"path":"interne/outils/feuille-de-temps.mdx","fullPath":"content\\wiki\\interne\\outils\\feuille-de-temps.mdx"}, data: docs_2 }, { info: {"path":"clients/clic-montreal/index.mdx","fullPath":"content\\wiki\\clients\\clic-montreal\\index.mdx"}, data: docs_3 }, { info: {"path":"clients/fondation-fais/index.mdx","fullPath":"content\\wiki\\clients\\fondation-fais\\index.mdx"}, data: docs_4 }], [{"info":{"path":"meta.json","fullPath":"content\\wiki\\meta.json"},"data":{"pages":["interne","clients"]}}, {"info":{"path":"interne/meta.json","fullPath":"content\\wiki\\interne\\meta.json"},"data":{"title":"FocusTDL / Interne","pages":["index","---Outils---","...outils","---Procédures---","---Modèles---"],"description":"Base de connaissance relative aux procédures internes de FocusTDL.","root":true}}, {"info":{"path":"clients/meta.json","fullPath":"content\\wiki\\clients\\meta.json"},"data":{"title":"Clients","description":"Base de connaissance relative aux clients de FocusTDL.","root":true,"icon":"Home"}}])
+import * as docs_4 from "../content/wiki/clients/fondation-fais/index.mdx?collection=docs&hash=1761140399855";
+import * as docs_3 from "../content/wiki/clients/clic-montreal/index.mdx?collection=docs&hash=1761140399855";
+import * as docs_2 from "../content/wiki/interne/outils/feuille-de-temps.mdx?collection=docs&hash=1761140399855";
+import * as docs_1 from "../content/wiki/clients/document.mdx?collection=docs&hash=1761140399855";
+import * as docs_0 from "../content/wiki/interne/index.mdx?collection=docs&hash=1761140399855";
+import { _runtime } from "fumadocs-mdx/runtime/next";
+import * as _source from "../source.config";
+export const docs = _runtime.docs<typeof _source.docs>(
+    [
+        {
+            info: {
+                path: "interne/index.mdx",
+                fullPath: "content\\wiki\\interne\\index.mdx",
+            },
+            data: docs_0,
+        },
+        {
+            info: {
+                path: "clients/document.mdx",
+                fullPath: "content\\wiki\\clients\\document.mdx",
+            },
+            data: docs_1,
+        },
+        {
+            info: {
+                path: "interne/outils/feuille-de-temps.mdx",
+                fullPath:
+                    "content\\wiki\\interne\\outils\\feuille-de-temps.mdx",
+            },
+            data: docs_2,
+        },
+        {
+            info: {
+                path: "clients/clic-montreal/index.mdx",
+                fullPath: "content\\wiki\\clients\\clic-montreal\\index.mdx",
+            },
+            data: docs_3,
+        },
+        {
+            info: {
+                path: "clients/fondation-fais/index.mdx",
+                fullPath: "content\\wiki\\clients\\fondation-fais\\index.mdx",
+            },
+            data: docs_4,
+        },
+    ],
+    [
+        {
+            info: { path: "meta.json", fullPath: "content\\wiki\\meta.json" },
+            data: { pages: ["interne", "clients"] },
+        },
+        {
+            info: {
+                path: "interne/meta.json",
+                fullPath: "content\\wiki\\interne\\meta.json",
+            },
+            data: {
+                title: "FocusTDL / Interne",
+                pages: [
+                    "index",
+                    "---Outils---",
+                    "...outils",
+                    "---Procédures---",
+                    "---Modèles---",
+                ],
+                description:
+                    "Base de connaissance relative aux procédures internes de FocusTDL.",
+                root: true,
+            },
+        },
+        {
+            info: {
+                path: "clients/meta.json",
+                fullPath: "content\\wiki\\clients\\meta.json",
+            },
+            data: {
+                title: "Clients",
+                description:
+                    "Base de connaissance relative aux clients de FocusTDL.",
+                root: true,
+                icon: "Home",
+            },
+        },
+    ]
+);

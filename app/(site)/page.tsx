@@ -135,11 +135,8 @@ function TimeEntry({
                                 aria-label="Modifier cette entrée de temps"
                                 disabled={!canEdit}
                                 className={cn(
-                                    "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent-400 rounded-full relative",
-                                    !mandat &&
-                                        "size-2 bg-zinc-300 dark:bg-zinc-800 rounded-full ring-1 ring-zinc-400 dark:ring-zinc-800",
-                                    mandat &&
-                                        "size-6 bg-accent-400 rounded-full flex",
+                                    "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent-400 rounded-full relative flex bg-zinc-300 size-6 dark:bg-zinc-800 -mt-2",
+                                    mandat && "bg-accent-400",
                                     canEdit && "cursor-pointer group",
                                     !canEdit && "opacity-50 cursor-not-allowed"
                                 )}

@@ -39,6 +39,10 @@ const schema = z.object({
             return Number(v);
         }, z.union([z.number().min(0, "Le quota d'heures doit être positif").max(40, "Le quota d'heures ne peut pas dépasser 40 heures"), z.null()]))
         .default(40),
+    matricule: z.preprocess(
+        (v) => (v === "" || v == null ? undefined : Number(v)),
+        z.number().min(0, "Le matricule doit être positif").optional()
+    ),
 });
 
 const NewEmployeeDialog = () => {
@@ -49,6 +53,7 @@ const NewEmployeeDialog = () => {
             email: "",
             first_name: "",
             last_name: "",
+            matricule: null,
             rate: 0,
             quota_max: 40,
         },

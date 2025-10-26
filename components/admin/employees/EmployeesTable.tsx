@@ -8,18 +8,7 @@ import { cn } from "@/lib/cn";
 import { SearchFull } from "@/components/search-full";
 import EditEmployeeDialog from "./EditEmployeeDialog";
 import Link from "next/link";
-
-type Employee = {
-    id: string;
-    full_name: string | null;
-    email: string | null;
-    role: string | null;
-    is_active: boolean | null;
-    created_at: string | null;
-    quota_max: number | null;
-    rate: number | null;
-    clients_team: { id: string; name: string; quota_max: number | null }[];
-};
+import { type Employee } from "@/components/admin/employees/EditEmployeeDialog";
 
 // Optionnel: impose un ordre préféré des rôles (sinon ordre alpha)
 const ROLE_ORDER = ["admin"];
@@ -127,6 +116,7 @@ export default function EmployeesTable({
                                 <thead>
                                     <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10">
                                         {[
+                                            "Matricule",
                                             "Nom",
                                             "Disponibilité",
                                             "Date de création",
@@ -160,6 +150,9 @@ export default function EmployeesTable({
                                                         : ""
                                                 )}
                                             >
+                                                <td className="p-4 font-mono">
+                                                    {e.matricule ?? "—"}
+                                                </td>
                                                 <td className="p-4 flex flex-col justify-center">
                                                     <div className="font-medium truncate">
                                                         <Link
@@ -175,6 +168,7 @@ export default function EmployeesTable({
 
                                                 <td
                                                     className={cn(
+                                                        "p-4 text-sm",
                                                         e.quota_max !== null &&
                                                             remainingQuota! <= 0
                                                             ? "text-red-600 dark:text-red-400 font-medium"
@@ -186,7 +180,7 @@ export default function EmployeesTable({
                                                         : "Illimité"}
                                                 </td>
 
-                                                <td className="hidden sm:block text-sm text-muted-foreground">
+                                                <td className="p-4 text-sm text-muted-foreground">
                                                     {e.created_at
                                                         ? new Date(
                                                               e.created_at
@@ -194,7 +188,7 @@ export default function EmployeesTable({
                                                         : "—"}
                                                 </td>
 
-                                                <td>
+                                                <td className="p-4 text-sm">
                                                     {e.is_active ? (
                                                         <Badge>Actif</Badge>
                                                     ) : (

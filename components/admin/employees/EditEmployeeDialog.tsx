@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { z } from "zod";
+import { number, z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -40,6 +40,7 @@ export type Employee = {
     created_at: string | null;
     quota_max: number | null;
     rate: number | null;
+    matricule: number | null;
     clients_team: ClientTeam[];
 };
 
@@ -61,6 +62,9 @@ const FormSchema = z.object({
     rate: z
         .union([z.number().nonnegative(), z.nan()])
         .transform((v) => (Number.isNaN(v) ? null : v)),
+    matricule: z
+        .union([z.number().nonnegative(), z.nan()])
+        .transform((v) => (Number.isNaN(v) ? null : v)),
 });
 
 type FormValues = z.infer<typeof FormSchema>;
@@ -80,7 +84,7 @@ export default function EditEmployeeDialog({
         resolver: zodResolver(FormSchema),
         defaultValues: {
             full_name: employee.full_name ?? "",
-            role: (employee.role as any) ?? null, // ⬅️ null here
+            role: (employee.role as any) ?? "user", // ⬅️ null here
             is_active: Boolean(employee.is_active),
             quota_max:
                 typeof employee.quota_max === "number"
@@ -89,6 +93,10 @@ export default function EditEmployeeDialog({
             rate:
                 typeof employee.rate === "number"
                     ? employee.rate
+                    : (Number.NaN as any),
+            matricule:
+                typeof employee.matricule === "number"
+                    ? employee.matricule
                     : (Number.NaN as any),
         },
         mode: "onChange",

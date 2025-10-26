@@ -136,7 +136,8 @@ function TimeEntry({
                                 disabled={!canEdit}
                                 className={cn(
                                     "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent-400 rounded-full relative flex bg-zinc-300 size-6 dark:bg-zinc-800 -mt-2",
-                                    mandat && "bg-accent-400",
+                                    mandat &&
+                                        "bg-accent-400 dark:bg-accent-400",
                                     canEdit && "cursor-pointer group",
                                     !canEdit && "opacity-50 cursor-not-allowed"
                                 )}

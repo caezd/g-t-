@@ -52,7 +52,7 @@ const NavLink = ({ name, href, Icon }) => {
 const AdminAside = () => {
     return (
         <aside className="hidden xl:flex xl:w-72 xl:z-50 xl:inset-y-0 xl:flex-col shrink-0">
-            <div className="flex flex-col grow gap-y-5 overflow-y-auto bg-accent-400">
+            <div className="flex flex-col grow gap-y-5 overflow-y-auto bg-accent-400 dark:bg-accent-400/90">
                 <header className="flex h-16 shrink-0 gap-6 items-center px-6 text-zinc-50">
                     <AppLogo
                         width={32}

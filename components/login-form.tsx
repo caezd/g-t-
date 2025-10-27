@@ -32,6 +32,20 @@ export function LoginForm({
         setIsLoading(true);
         setError(null);
 
+        const { data: user } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("email", email)
+            .single();
+        if (user && user.is_active === false) {
+            console.log(user);
+            setError(
+                "Votre compte est désactivé. Veuillez contacter l'administrateur."
+            );
+            setIsLoading(false);
+            return;
+        }
+
         try {
             const { error } = await supabase.auth.signInWithPassword({
                 email,
@@ -53,16 +67,16 @@ export function LoginForm({
         <div className={cn("flex flex-col gap-6", className)} {...props}>
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-2xl">Login</CardTitle>
+                    <CardTitle className="text-2xl">Identification</CardTitle>
                     <CardDescription>
-                        Enter your email below to login to your account
+                        Entrez vos identifiants pour accéder à votre compte.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleLogin}>
                         <div className="flex flex-col gap-6">
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Email</Label>
+                                <Label htmlFor="email">Courriel</Label>
                                 <Input
                                     id="email"
                                     type="email"
@@ -74,12 +88,14 @@ export function LoginForm({
                             </div>
                             <div className="grid gap-2">
                                 <div className="flex items-center">
-                                    <Label htmlFor="password">Password</Label>
+                                    <Label htmlFor="password">
+                                        Mot de passe
+                                    </Label>
                                     <Link
                                         href="/auth/forgot-password"
                                         className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
                                     >
-                                        Forgot your password?
+                                        Mot de passe oublié ?
                                     </Link>
                                 </div>
                                 <Input
@@ -100,7 +116,7 @@ export function LoginForm({
                                 className="w-full"
                                 disabled={isLoading}
                             >
-                                {isLoading ? "Logging in..." : "Login"}
+                                {isLoading ? "En cours..." : "Connexion"}
                             </Button>
                         </div>
                     </form>

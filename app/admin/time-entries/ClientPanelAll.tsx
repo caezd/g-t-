@@ -20,6 +20,8 @@ import {
     dateAtNoonLocal,
     ymdFromDate,
 } from "@/utils/date";
+import { Fragment } from "react";
+import { Badge } from "@/components/ui/badge";
 
 type Client = { id: string | number; name?: string | null };
 
@@ -223,12 +225,12 @@ export default function ClientPanelAll({
             .from("time_entries")
             .select(
                 `
-        id, profile_id, doc, billed_amount, details, is_closed,
-        client:clients (name),
-        mandat:clients_mandats (mandat_types (description)),
-        clients_services (name),
-        profile:profiles (full_name, email)
-      `
+                    id, profile_id, doc, billed_amount, details, is_closed,
+                    client:clients (name),
+                    mandat:clients_mandats (mandat_types (description)),
+                    clients_services (name),
+                    profile:profiles (full_name, email, matricule)
+                `
             )
             .gte("doc", start.toISOString())
             .lte("doc", end.toISOString())
@@ -383,6 +385,7 @@ export default function ClientPanelAll({
                             <th className="text-left p-2">Client</th>
                             <th className="text-left p-2">Mandat</th>
                             <th className="text-left p-2">Service</th>
+                            <th className="text-left p-2">Détails</th>
                             <th className="text-right p-2">Heures</th>
                             <th className="text-center p-2">État</th>
                         </tr>
@@ -390,56 +393,71 @@ export default function ClientPanelAll({
                     <tbody>
                         {entries.map((e) => {
                             const d = new Date(e.doc);
-                            const emp =
-                                e.profile?.full_name ||
-                                e.profile?.email ||
-                                e.profile_id;
                             return (
-                                <tr key={e.id} className="border-t">
-                                    <td className="p-2 align-middle">
-                                        <Checkbox
-                                            checked={!!checked[e.id]}
-                                            onCheckedChange={(v) =>
-                                                setChecked((prev) => ({
-                                                    ...prev,
-                                                    [e.id]: !!v,
-                                                }))
-                                            }
-                                        />
-                                    </td>
-                                    <td className="p-2">
-                                        {d.toLocaleDateString("fr-CA")}
-                                    </td>
-                                    <td className="p-2">{emp}</td>
-                                    <td className="p-2">
-                                        {e.client?.name ?? "—"}
-                                    </td>
-                                    <td className="p-2">
-                                        {e.mandat?.mandat_types?.description ??
-                                            "—"}
-                                    </td>
-                                    <td className="p-2">
-                                        {e.clients_services?.name ?? "—"}
-                                    </td>
-                                    <td className="p-2 text-right">
-                                        {typeof e.billed_amount === "number"
-                                            ? e.billed_amount.toFixed(2)
-                                            : e.billed_amount}
-                                    </td>
-                                    <td className="p-2 text-center">
-                                        {e.is_closed ? (
-                                            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-muted">
-                                                <Lock className="h-3 w-3" />{" "}
-                                                Fermé
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-                                                <Unlock className="h-3 w-3" />{" "}
-                                                Ouvert
-                                            </span>
-                                        )}
-                                    </td>
-                                </tr>
+                                <Fragment key={e.id}>
+                                    <tr key={e.id} className="border-t">
+                                        <td className="p-2 align-middle">
+                                            <Checkbox
+                                                checked={!!checked[e.id]}
+                                                onCheckedChange={(v) =>
+                                                    setChecked((prev) => ({
+                                                        ...prev,
+                                                        [e.id]: !!v,
+                                                    }))
+                                                }
+                                            />
+                                        </td>
+                                        <td className="p-2 whitespace-nowrap">
+                                            {d.toLocaleDateString("fr-CA")}
+                                        </td>
+                                        <td className="p-2 whitespace-nowrap">
+                                            <div className="font-mono text-xs">
+                                                {e.profile?.matricule}
+                                            </div>
+                                            <div className="font-semibold">
+                                                {e.profile?.full_name}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">
+                                                {e.profile?.email}
+                                            </div>
+                                        </td>
+                                        <td className="p-2 whitespace-nowrap">
+                                            {e.client?.name ?? "—"}
+                                        </td>
+                                        <td className="p-2 whitespace-nowrap">
+                                            {e.mandat?.mandat_types
+                                                ?.description ?? (
+                                                <span className="dark:text-red-400 text-red-600 font-semibold">
+                                                    Hors mandat
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="p-2 whitespace-nowrap">
+                                            {e.clients_services?.name ?? "—"}
+                                        </td>
+                                        <td className="p-2 bg-foreground/50">
+                                            {e.details || "—"}
+                                        </td>
+                                        <td className="p-2 text-right">
+                                            {typeof e.billed_amount === "number"
+                                                ? e.billed_amount.toFixed(2)
+                                                : e.billed_amount}
+                                        </td>
+                                        <td className="p-2 text-center">
+                                            {e.is_closed ? (
+                                                <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-muted">
+                                                    <Lock className="h-3 w-3" />{" "}
+                                                    Fermé
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+                                                    <Unlock className="h-3 w-3" />{" "}
+                                                    Ouvert
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                </Fragment>
                             );
                         })}
                         {!entries.length && (

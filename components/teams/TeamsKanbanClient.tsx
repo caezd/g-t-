@@ -76,6 +76,7 @@ function sumByRole(
 }
 
 function ClientCard({ c }: { c: any }) {
+    console.log(c);
     return (
         <Card key={c.id}>
             <CardHeader>
@@ -85,35 +86,39 @@ function ClientCard({ c }: { c: any }) {
             </CardHeader>
             <CardContent className="space-y-3">
                 {c.clients_mandats?.length ? (
-                    c.clients_mandats.map((m: any, i: number) => {
-                        const totals = sumByRole(m.time_entries ?? []);
-                        return (
-                            <div className="overflow-x-auto" key={i}>
-                                <h4 className="border-b text-sm font-medium pb-1 flex items-center justify-between">
-                                    {m.mandat_types?.description ??
-                                        `Mandat #${m.id}`}
-                                    <span
-                                        className={cn(
-                                            "text-muted-foreground",
-                                            totals.total > m.quota_max
-                                                ? " dark:text-red-400 text-red-600"
-                                                : ""
-                                        )}
-                                    >
-                                        {m.quota_max} h/max
-                                    </span>
-                                </h4>
-                                <table className="w-full text-sm">
-                                    <thead className="text-left font-medium">
-                                        <tr className="[&_th]:py-2">
-                                            <th>Chargé</th>
-                                            <th>Adjoint</th>
-                                            <th>Aidant</th>
-                                            <th>Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="text-left font-medium text-xs">
+                                <tr className="[&_th]:py-2">
+                                    <th>Mandat</th>
+                                    <th>Chargé</th>
+                                    <th>Adjoint</th>
+                                    <th>Aidant</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                                {c.clients_mandats.map((m: any, i: number) => {
+                                    const totals = sumByRole(
+                                        m.time_entries ?? []
+                                    );
+                                    return (
                                         <tr key={m.id} className="[&_td]:py-2">
+                                            <td>
+                                                {m.mandat_types?.description ??
+                                                    `Mandat #${m.id}`}
+                                                <span
+                                                    className={cn(
+                                                        "text-muted-foreground",
+                                                        totals.total >
+                                                            m.quota_max
+                                                            ? " dark:text-red-400 text-red-600"
+                                                            : ""
+                                                    )}
+                                                >
+                                                    {m.quota_max} h/max
+                                                </span>
+                                            </td>
                                             <td>
                                                 {FormatDecimalsToHours(
                                                     totals.manager
@@ -142,11 +147,45 @@ function ClientCard({ c }: { c: any }) {
                                                 )}
                                             </td>
                                         </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        );
-                    })
+                                    );
+                                })}
+                                {c.unassigned_time_entries?.length ? (
+                                    <tr className="[&_td]:py-2 dark:text-red-400 text-red-600">
+                                        <td>Hors mandat</td>
+
+                                        <td>
+                                            {FormatDecimalsToHours(
+                                                sumByRole(
+                                                    c.unassigned_time_entries
+                                                ).manager
+                                            )}
+                                        </td>
+                                        <td>
+                                            {FormatDecimalsToHours(
+                                                sumByRole(
+                                                    c.unassigned_time_entries
+                                                ).assistant
+                                            )}
+                                        </td>
+                                        <td>
+                                            {FormatDecimalsToHours(
+                                                sumByRole(
+                                                    c.unassigned_time_entries
+                                                ).helper
+                                            )}
+                                        </td>
+                                        <td>
+                                            {FormatDecimalsToHours(
+                                                sumByRole(
+                                                    c.unassigned_time_entries
+                                                ).total
+                                            )}
+                                        </td>
+                                    </tr>
+                                ) : null}
+                            </tbody>
+                        </table>
+                    </div>
                 ) : (
                     <p className="text-sm text-muted-foreground">
                         Aucun mandat associé.
@@ -177,10 +216,6 @@ export default function TeamsKanbanClient({ rows }: { rows: TeamRow[] }) {
             } as Record<UserRole, any[]>
         );
     }, [buckets, dq]);
-
-    const totalCount = (
-        ["manager", "assistant", "helper"] as UserRole[]
-    ).reduce((n, k) => n + filtered[k].length, 0);
 
     const columns: { key: UserRole; title: string }[] = [
         { key: "manager", title: "Comme chargé" },

@@ -48,6 +48,88 @@ async function buildFMIndex(): Promise<FMIndex> {
     return { meta };
 }
 
+function squashSeparators(nodes: any[]) {
+    const out: any[] = [];
+    let prevSep = true;
+    for (const n of nodes) {
+        if (n?.type === "separator") {
+            if (prevSep) continue;
+            prevSep = true;
+            out.push(n);
+        } else {
+            prevSep = false;
+            out.push(n);
+        }
+    }
+    if (out[out.length - 1]?.type === "separator") out.pop();
+    return out;
+}
+
+function isNodeAllowedByFM(node: any, fm: any, userClientSlugs: string[]) {
+    if (node?.type === "separator") return true;
+    if (fm?.public) return true;
+    if (!fm?.access) return false;
+
+    // Ta règle existante (exemple) : mode === "client"
+    const { mode } = fm.access;
+    if (mode === "client") {
+        const key = node?.name ?? "";
+        return userClientSlugs.length > 0 && userClientSlugs.includes(key);
+    }
+
+    return false;
+}
+
+function processRootChildrenOnly(
+    rootFolder: any,
+    meta: any,
+    userClientSlugs: string[]
+) {
+    if (!Array.isArray(rootFolder?.children)) return rootFolder;
+    const kept: any[] = [];
+    for (const child of rootFolder.children) {
+        const filtered = filterNodeRec(child, meta, userClientSlugs);
+        if (filtered) kept.push(filtered);
+    }
+    // mutation in-place
+    rootFolder.children = squashSeparators(kept);
+    return rootFolder;
+}
+
+function filterNodeRec(
+    node: any,
+    meta: any,
+    userClientSlugs: string[]
+): any | null {
+    if (!node) return null;
+    const fm = meta.meta[node?.name ?? ""];
+
+    if (node.type === "folder") {
+        // on traite récursivement ses enfants
+        const kept: any[] = [];
+        for (const child of node.children ?? []) {
+            const filtered = filterNodeRec(child, meta, userClientSlugs);
+            if (filtered) kept.push(filtered);
+        }
+        // mutation in-place
+        node.children = squashSeparators(kept);
+
+        // garder le dossier si :
+        //  - il a encore des enfants visibles, OU
+        //  - son propre FM l’autorise (afficher un folder "vide" autorisé)
+        if (
+            (node.children?.length ?? 0) > 0 ||
+            isNodeAllowedByFM(node, fm, userClientSlugs)
+        ) {
+            return node; // on retourne le *même* objet (toutes les props intactes)
+        }
+        return null; // parent le retirera
+    }
+
+    // page / separator
+    return isNodeAllowedByFM(node, fm, userClientSlugs) ? node : null;
+}
+
 export default async function DocsRootLayout({
     children,
 }: {
@@ -70,33 +152,13 @@ export default async function DocsRootLayout({
     const raw = JSON.parse(JSON.stringify(source.pageTree));
 
     const meta = await buildFMIndex();
-    /* console.log(userClientSlugs); */
 
-    const filteredChildren = raw.children.filter((p) => {
-        console.log(p);
-        const fm = meta.meta[p.name ?? ""];
-        console.log(fm);
-        if (p.type === "separator") return true;
-        // if public, allow
-        if (fm?.public) return true;
-        // if no access rule, deny
-        if (!fm?.access) return false;
-
-        // check access rules
-        const { mode } = fm.access;
-        if (mode === "client") {
-            if (
-                userClientSlugs.length > 0 &&
-                userClientSlugs.includes(p.name ?? "")
-            ) {
-                return true;
-            }
+    // Si ton pageTree est un seul root objet (cas le plus courant avec Fumadocs)
+    for (const child of raw.children ?? []) {
+        if (child?.type === "folder" && child?.root === true) {
+            processRootChildrenOnly(child, meta, userClientSlugs);
         }
-
-        return false;
-    });
-
-    console.log("filtered", filteredChildren);
+    }
 
     return (
         <DocsKeyBoundary className="w-full flex flex-1" bump={bump}>

@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CornerDownRight, User } from "lucide-react";
 import { Fragment } from "react";
 import { SearchFull } from "@/components/search-full";
+import { Badge } from "@/components/ui/badge";
 
 // -------------------------------------------------
 // Helpers format
@@ -110,10 +111,23 @@ interface ClientTeam {
     id?: number;
     client_id: number;
     user_id?: string | number;
+    role?: TeamRole | null;
     quota_max: number | null;
     deleted_at: string | null;
-    profile?: { full_name?: string | null } | null;
+    profile?: { full_name?: string | null; rate?: number | null } | null;
 }
+type TeamRole = "manager" | "assistant" | "helper";
+const ROLE_LABEL: Record<TeamRole, string> = {
+    manager: "Chargé",
+    assistant: "Adjoint",
+    helper: "Aidant",
+};
+
+const ROLE_WEIGHT: Record<TeamRole, number> = {
+    manager: 0, // 1er
+    assistant: 1, // 2e
+    helper: 2, // 3e
+};
 
 function getDurationMins(te: TimeEntry): number {
     // Essaie plusieurs conventions de colonnes (minutes, duration_min, hours)
@@ -340,8 +354,7 @@ export default async function BiblePage() {
                                                                             (m.quota_max ??
                                                                                 0),
                                                                         0
-                                                                    ) -
-                                                                        mandat.quota_max}
+                                                                    )}
                                                                 </>
                                                                 )
                                                             </span>
@@ -383,59 +396,75 @@ export default async function BiblePage() {
                                         })}
                                 </div>
                                 <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/10 divide-x text-xs">
-                                    {r.clients_team?.map((m, idx) => (
-                                        <div
-                                            key={
-                                                m.id ??
-                                                `${r.id}-t-${m.user_id}-${idx}`
-                                            }
-                                            className="contents"
-                                        >
-                                            {/* Colonne 1 : nom de l’employé (ou user_id), indenté */}
-                                            <div className="px-4 pb-3 pl-12 flex items-center gap-2">
-                                                <User
-                                                    className="inline"
-                                                    size={16}
-                                                />
-                                                <span className=" text-muted-foreground">
-                                                    {m.profile?.full_name ??
-                                                        `Employé #${
-                                                            m.user_id ?? idx + 1
-                                                        }`}
-                                                </span>
-                                            </div>
+                                    {(() => {
+                                        const teamSorted = [
+                                            ...(r.clients_team ?? []),
+                                        ].sort(
+                                            (a, b) =>
+                                                (ROLE_WEIGHT[
+                                                    a.role as TeamRole
+                                                ] ?? 99) -
+                                                (ROLE_WEIGHT[
+                                                    b.role as TeamRole
+                                                ] ?? 99)
+                                        );
+                                        return teamSorted.map((m, idx) => (
+                                            <div
+                                                key={
+                                                    m.id ??
+                                                    `${r.id}-t-${m.user_id}-${idx}`
+                                                }
+                                                className="contents"
+                                            >
+                                                {/* Colonne 1 : nom de l’employé (ou user_id), indenté */}
+                                                <div className="px-4 pb-3 flex items-center gap-2">
+                                                    <Badge>
+                                                        {m.role
+                                                            ? ROLE_LABEL[m.role]
+                                                            : "—"}
+                                                    </Badge>
+                                                    <span className=" text-muted-foreground">
+                                                        {m.profile?.full_name ??
+                                                            `Employé #${
+                                                                m.user_id ??
+                                                                idx + 1
+                                                            }`}
+                                                    </span>
+                                                </div>
 
-                                            {/* Colonnes 2..9 alignées (exemples) */}
-                                            <div className="pb-3">
-                                                {/* Quota équipes (par employé) */}
-                                                <span className="text-xs">
-                                                    {m.quota_max ?? 0} h
-                                                </span>
+                                                {/* Colonnes 2..9 alignées (exemples) */}
+                                                <div className="pb-3">
+                                                    {/* Quota équipes (par employé) */}
+                                                    <span className="text-xs">
+                                                        {m.quota_max ?? 0} h
+                                                    </span>
+                                                </div>
+                                                <div className="pb-3">
+                                                    {m.profile?.rate ?? 0}
+                                                </div>
+                                                <div className="pb-3">
+                                                    {m.quota_max *
+                                                        m.profile?.rate}{" "}
+                                                    $
+                                                </div>
+                                                <div className="pb-3">
+                                                    {/* $ horaire (n/a employé) */}
+                                                </div>
+                                                <div className="pb-3">
+                                                    {/* Temps semaine (si tu veux filtrer par user_id plus tard) */}
+                                                </div>
+                                                <div className="pb-3">
+                                                    {/* Temps mois */}
+                                                </div>
+                                                <div className="pb-3">
+                                                    {/* Écart semaine */}
+                                                </div>
+                                                <div className="pb-3">
+                                                    {/* Écart mois */}
+                                                </div>
                                             </div>
-                                            <div className="pb-3">
-                                                {m.profile?.rate ?? 0}
-                                            </div>
-                                            <div className="pb-3">
-                                                {m.quota_max * m.profile?.rate}{" "}
-                                                $
-                                            </div>
-                                            <div className="pb-3">
-                                                {/* $ horaire (n/a employé) */}
-                                            </div>
-                                            <div className="pb-3">
-                                                {/* Temps semaine (si tu veux filtrer par user_id plus tard) */}
-                                            </div>
-                                            <div className="pb-3">
-                                                {/* Temps mois */}
-                                            </div>
-                                            <div className="pb-3">
-                                                {/* Écart semaine */}
-                                            </div>
-                                            <div className="pb-3">
-                                                {/* Écart mois */}
-                                            </div>
-                                        </div>
-                                    ))}
+                                        ));
+                                    })()}
                                 </div>
                             </div>
                         ))}

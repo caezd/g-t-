@@ -25,6 +25,9 @@ export default async function Page() {
                     billing_type,
                     mandat_types ( description ),
                     time_entries ( role, billed_amount, doc )
+                ),
+                unassigned_time_entries:time_entries!client_id (
+                    id, role, billed_amount, doc, mandat_id
                 )
             )
             `
@@ -35,6 +38,16 @@ export default async function Page() {
         })
         .lte("clients.clients_mandats.time_entries.doc", last.toISOString(), {
             referencedTable: "clients_mandats.time_entries",
+        })
+
+        .gte("clients.unassigned_time_entries.doc", first.toISOString(), {
+            referencedTable: "clients.time_entries",
+        })
+        .lte("clients.unassigned_time_entries.doc", last.toISOString(), {
+            referencedTable: "clients.time_entries",
+        })
+        .is("clients.unassigned_time_entries.mandat_id", null, {
+            referencedTable: "clients.time_entries",
         });
 
     if (error) throw error;

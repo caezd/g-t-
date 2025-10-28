@@ -14,10 +14,12 @@ function TableSection({
     icon,
     title,
     items,
+    settings,
 }: {
     icon?: React.ReactNode;
     title: string;
     items: Employee[];
+    settings: any;
 }) {
     return (
         <section className="border rounded-lg overflow-hidden">
@@ -92,10 +94,14 @@ function TableSection({
                                         0
                                     ) ?? 0;
                                 const remainingQuota =
-                                    (e.quota_max ?? 0) - (clientsQuota ?? 0);
+                                    (e.quota_max ?? 0) -
+                                    (clientsQuota ?? 0) -
+                                    (settings?.base_allowance_hours ?? 0);
                                 /* social charge is .18 */
                                 const realCost = e.quota_max
-                                    ? e.quota_max *
+                                    ? (e.quota_max -
+                                          (settings?.base_allowance_hours ??
+                                              0)) *
                                       e.rate! *
                                       (1 + (e.social_charge ?? 0))
                                     : null;
@@ -194,8 +200,10 @@ function TableSection({
 
 export default function EmployeesTable({
     initialData,
+    settings,
 }: {
     initialData: Employee[];
+    settings: any;
 }) {
     const [q, setQ] = useState("");
 
@@ -265,18 +273,21 @@ export default function EmployeesTable({
                     icon={<ShieldUser className="h-4 w-4" />}
                     title="Administrateurs"
                     items={admins}
+                    settings={settings}
                 />
 
                 <TableSection
                     icon={<UsersRound className="h-4 w-4" />}
                     title="Employés"
                     items={users}
+                    settings={settings}
                 />
 
                 <TableSection
                     icon={<Moon className="h-4 w-4" />}
                     title="Inactifs"
                     items={inactive}
+                    settings={settings}
                 />
             </div>
         </div>

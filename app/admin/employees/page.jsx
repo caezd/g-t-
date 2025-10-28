@@ -14,7 +14,11 @@ export default async function AdminEmployeesPage() {
             "id, full_name, email, role, created_at, is_active, rate, quota_max, matricule, social_charge, clients_team(*)"
         )
         .order("full_name", { ascending: true });
-    console.log(profiles);
+
+    const { data: settings } = await supabase
+        .from("app_settings")
+        .select("base_allowance_hours, notes")
+        .single();
 
     if (error) {
         // tu peux rendre une UI d’erreur plus fancy si tu veux
@@ -41,7 +45,10 @@ export default async function AdminEmployeesPage() {
                 </div>
 
                 <section className="flex flex-col flex-1">
-                    <EmployeesTable initialData={profiles ?? []} />
+                    <EmployeesTable
+                        initialData={profiles ?? []}
+                        settings={settings}
+                    />
                 </section>
             </div>
         </div>

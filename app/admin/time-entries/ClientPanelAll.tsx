@@ -21,7 +21,6 @@ import {
     ymdFromDate,
 } from "@/utils/date";
 import { Fragment } from "react";
-import { Badge } from "@/components/ui/badge";
 
 type Client = { id: string | number; name?: string | null };
 

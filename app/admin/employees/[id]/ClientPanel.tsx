@@ -19,6 +19,8 @@ import {
     ymdFromDate,
 } from "@/utils/date";
 import { cn } from "@/lib/utils";
+import TimeEntryEditorDialog from "@/components/forms/TimeEntryEditorDialog";
+import TimeEntryCreateDialog from "@/components/forms/TimeEntryCreateDialog";
 
 type Entry = {
     id: number;
@@ -61,11 +63,11 @@ export default function ClientPanel({ employeeId }: { employeeId: string }) {
             .from("time_entries")
             .select(
                 `
-        id, doc, billed_amount, details, is_closed,
-        client:clients (id, name),
-        mandat:clients_mandats (id, mandat_types (description)),
-        clients_services (id, name)
-      `
+                id, doc, billed_amount, details, is_closed,
+                client:clients (id, name),
+                mandat:clients_mandats (id, mandat_types (description)),
+                clients_services (id, name)
+            `
             )
             .eq("profile_id", employeeId)
             .gte("doc", start.toISOString())
@@ -117,150 +119,180 @@ export default function ClientPanel({ employeeId }: { employeeId: string }) {
     }
 
     return (
-        <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Entrées de la semaine</CardTitle>
-                <div className="flex items-center gap-2">
-                    <Popover open={openCal} onOpenChange={setOpenCal}>
-                        <PopoverTrigger asChild>
-                            <Button
-                                variant="outline"
-                                className={cn("justify-start")}
-                            >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {ymdFromDate(start)} → {ymdFromDate(end)}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="end">
-                            <Calendar
-                                mode="single"
-                                selected={anchor}
-                                onSelect={(d) => {
-                                    if (d) setAnchor(dateAtNoonLocal(d));
-                                    setOpenCal(false);
-                                }}
-                                initialFocus
-                            />
-                        </PopoverContent>
-                    </Popover>
+        <>
+            <div className="flex items-center gap-2">
+                <Popover open={openCal} onOpenChange={setOpenCal}>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="outline"
+                            className={cn("justify-start")}
+                        >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {ymdFromDate(start)} → {ymdFromDate(end)}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                        <Calendar
+                            mode="single"
+                            selected={anchor}
+                            onSelect={(d) => {
+                                if (d) setAnchor(dateAtNoonLocal(d));
+                                setOpenCal(false);
+                            }}
+                            initialFocus
+                        />
+                    </PopoverContent>
+                </Popover>
 
-                    <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => closeWeek(true)}
-                    >
-                        <Lock className="mr-2 h-4 w-4" /> Fermer la semaine
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => closeWeek(false)}
-                    >
-                        <Unlock className="mr-2 h-4 w-4" /> Réouvrir la semaine
-                    </Button>
+                <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => closeWeek(true)}
+                >
+                    <Lock className="mr-2 h-4 w-4" /> Fermer la semaine
+                </Button>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => closeWeek(false)}
+                >
+                    <Unlock className="mr-2 h-4 w-4" /> Réouvrir la semaine
+                </Button>
+            </div>
+            <div className="flex items-center gap-2">
+                <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setClosed(selectedIds, true)}
+                    disabled={!selectedIds.length}
+                >
+                    <Lock className="mr-2 h-4 w-4" /> Fermer sélection
+                </Button>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setClosed(selectedIds, false)}
+                    disabled={!selectedIds.length}
+                >
+                    <Unlock className="mr-2 h-4 w-4" /> Réouvrir sélection
+                </Button>
+                <div className="ml-auto text-sm text-muted-foreground">
+                    {loading ? "Chargement…" : `${entries.length} entrées`}
                 </div>
-            </CardHeader>
+                <TimeEntryCreateDialog
+                    profileId={employeeId}
+                    onCreated={(row) => setEntries((prev) => [row, ...prev])}
+                />
+            </div>
 
-            <CardContent className="space-y-4">
-                <div className="flex items-center gap-2">
-                    <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setClosed(selectedIds, true)}
-                        disabled={!selectedIds.length}
-                    >
-                        <Lock className="mr-2 h-4 w-4" /> Fermer sélection
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setClosed(selectedIds, false)}
-                        disabled={!selectedIds.length}
-                    >
-                        <Unlock className="mr-2 h-4 w-4" /> Réouvrir sélection
-                    </Button>
-                    <div className="ml-auto text-sm text-muted-foreground">
-                        {loading ? "Chargement…" : `${entries.length} entrées`}
-                    </div>
-                </div>
+            <div className="border rounded-md overflow-hidden">
+                <table className="w-full text-sm">
+                    <thead className="bg-muted/50">
+                        <tr>
+                            <th className="w-10 p-2"></th>
+                            <th className="text-left p-2">Date</th>
+                            <th className="text-left p-2">Client</th>
+                            <th className="text-left p-2">Mandat</th>
+                            <th className="text-left p-2">Service</th>
+                            <th className="text-left p-2">Détails</th>
+                            <th className="text-right p-2">Heures</th>
+                            <th className="text-center p-2">État</th>
+                            <th className="text-center p-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {entries.map((e) => {
+                            const d = new Date(e.doc);
+                            return (
+                                <tr key={e.id} className="border-t">
+                                    <td className="p-2 align-middle">
+                                        <Checkbox
+                                            checked={!!checked[e.id]}
+                                            onCheckedChange={(v) =>
+                                                setChecked((prev) => ({
+                                                    ...prev,
+                                                    [e.id]: !!v,
+                                                }))
+                                            }
+                                        />
+                                    </td>
+                                    <td className="p-2 whitespace-nowrap">
+                                        {d.toLocaleDateString("fr-CA")}
+                                    </td>
 
-                <div className="border rounded-md overflow-hidden">
-                    <table className="w-full text-sm">
-                        <thead className="bg-muted/50">
-                            <tr>
-                                <th className="w-10 p-2"></th>
-                                <th className="text-left p-2">Date</th>
-                                <th className="text-left p-2">Client</th>
-                                <th className="text-left p-2">Mandat</th>
-                                <th className="text-left p-2">Service</th>
-                                <th className="text-right p-2">Heures</th>
-                                <th className="text-center p-2">État</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {entries.map((e) => {
-                                const d = new Date(e.doc);
-                                return (
-                                    <tr key={e.id} className="border-t">
-                                        <td className="p-2 align-middle">
-                                            <Checkbox
-                                                checked={!!checked[e.id]}
-                                                onCheckedChange={(v) =>
-                                                    setChecked((prev) => ({
-                                                        ...prev,
-                                                        [e.id]: !!v,
-                                                    }))
-                                                }
-                                            />
-                                        </td>
-                                        <td className="p-2">
-                                            {d.toLocaleDateString("fr-CA")}
-                                        </td>
-                                        <td className="p-2">
-                                            {e.client?.name ?? "—"}
-                                        </td>
-                                        <td className="p-2">
-                                            {e.mandat?.mandat_types
-                                                ?.description ?? "—"}
-                                        </td>
-                                        <td className="p-2">
-                                            {e.clients_services?.name ?? "—"}
-                                        </td>
-                                        <td className="p-2 text-right">
-                                            {typeof e.billed_amount === "number"
-                                                ? e.billed_amount.toFixed(2)
-                                                : e.billed_amount}
-                                        </td>
-                                        <td className="p-2 text-center">
-                                            {e.is_closed ? (
-                                                <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-muted">
-                                                    <Lock className="h-3 w-3" />{" "}
-                                                    Fermé
-                                                </span>
-                                            ) : (
-                                                <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-                                                    <Unlock className="h-3 w-3" />{" "}
-                                                    Ouvert
-                                                </span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                            {!entries.length && (
-                                <tr>
-                                    <td
-                                        colSpan={7}
-                                        className="p-6 text-center text-muted-foreground"
-                                    >
-                                        Aucune entrée sur cette semaine.
+                                    <td className="p-2 whitespace-nowrap">
+                                        {e.client?.name ?? "—"}
+                                    </td>
+                                    <td className="p-2 whitespace-nowrap">
+                                        {e.mandat?.mandat_types?.description ??
+                                            "—"}
+                                    </td>
+                                    <td className="p-2 whitespace-nowrap">
+                                        {e.clients_services?.name ?? "—"}
+                                    </td>
+                                    <td className="p-2">{e.details ?? "—"}</td>
+                                    <td className="p-2 text-right">
+                                        {typeof e.billed_amount === "number"
+                                            ? e.billed_amount.toFixed(2)
+                                            : e.billed_amount}
+                                    </td>
+                                    <td className="p-2 text-center">
+                                        {e.is_closed ? (
+                                            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-muted">
+                                                <Lock className="h-3 w-3" />{" "}
+                                                Fermé
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+                                                <Unlock className="h-3 w-3" />{" "}
+                                                Ouvert
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="p-2 text-center">
+                                        <TimeEntryEditorDialog
+                                            entry={e}
+                                            isAdmin
+                                            onPatched={(u) =>
+                                                setEntries((prev) =>
+                                                    prev.map((x) =>
+                                                        x.id === u.id ? u : x
+                                                    )
+                                                )
+                                            }
+                                            onDeleted={(id) =>
+                                                setEntries((prev) =>
+                                                    prev.filter(
+                                                        (x) => x.id !== id
+                                                    )
+                                                )
+                                            }
+                                            trigger={
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                >
+                                                    Éditer
+                                                </Button>
+                                            }
+                                        />
                                     </td>
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </CardContent>
-        </Card>
+                            );
+                        })}
+                        {!entries.length && (
+                            <tr>
+                                <td
+                                    colSpan={7}
+                                    className="p-6 text-center text-muted-foreground"
+                                >
+                                    Aucune entrée sur cette semaine.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </>
     );
 }

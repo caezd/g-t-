@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 
 import { z } from "zod";
 import { cn } from "@/lib/utils";
-import { toHoursDecimal } from "@/utils/date";
+import { toHoursDecimal, dateAtNoonLocal } from "@/utils/date";
 
 import { CalendarIcon, ChevronsUpDown, Check } from "lucide-react";
 
@@ -499,7 +499,7 @@ export function TimeEntryForm({ onCreated }) {
             .from("time_entries")
             .insert([
                 {
-                    doc: values.doc, // c’est déjà un Date via RHF/zod
+                    doc: dateAtNoonLocal(values.doc), // c’est déjà un Date via RHF/zod
                     billed_amount: toHoursDecimal(values.billed_amount),
                     client_id: values.client_id,
                     details: values.details,
@@ -636,7 +636,6 @@ export function TimeEntryForm({ onCreated }) {
 
                     <ClientPickerRow form={form} />
                     {/* row */}
-
                     <MandatePickerRow form={form} />
                     <ServicePickerRow form={form} />
                     {/* row */}

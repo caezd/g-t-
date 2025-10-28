@@ -8,6 +8,7 @@ import { SearchFull } from "@/components/search-full";
 import EditEmployeeDialog from "./EditEmployeeDialog";
 import Link from "next/link";
 import { type Employee } from "@/components/admin/employees/EditEmployeeDialog";
+import { Hint } from "@/components/hint";
 
 function TableSection({
     icon,
@@ -33,19 +34,38 @@ function TableSection({
                     <thead>
                         <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10">
                             {[
-                                "Matricule",
-                                "Nom",
-                                "Disponibilité",
-                                "Coûtant réel",
-                                "Coûtant vide",
-                                "Date de création",
-                                "Statut",
-                                "",
+                                { label: "Matricule" },
+                                { label: "Nom" },
+                                {
+                                    label: "Disponibilité",
+                                    hint: "Heures restantes / quota maximal",
+                                },
+                                {
+                                    label: "Coûtant réel",
+                                    hint: "Coûtant selon le taux horaire et les charges sociales.",
+                                },
+                                { label: "Coûtant vide", hint: "" },
+                                { label: "Date de création" },
+                                { label: "Statut" },
+                                { label: "", className: "w-0" },
                             ].map((col) => (
-                                <th key={col} className="px-4 py-2">
-                                    {col}
+                                <th
+                                    key={col.label}
+                                    className={cn("px-4 py-2", col.className)}
+                                >
+                                    <div className=" inline-flex items-center">
+                                        {" "}
+                                        {col.label}
+                                        {col.hint && (
+                                            <Hint
+                                                content={col.hint}
+                                                className="ml-1"
+                                            />
+                                        )}
+                                    </div>
                                 </th>
                             ))}
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -106,7 +126,7 @@ function TableSection({
                                             )}
                                         >
                                             {e.quota_max != null
-                                                ? `${remainingQuota} / ${e.quota_max} h`
+                                                ? `${remainingQuota} / ${e.quota_max} h`
                                                 : "Illimité"}
                                         </td>
 

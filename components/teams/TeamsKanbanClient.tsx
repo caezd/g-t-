@@ -35,30 +35,27 @@ function matchesQuery(client: any, q: string) {
     return hay.includes(n);
 }
 
-function toBuckets(rows: TeamRow[] = []) {
-    const buckets: Record<UserRole, any[]> = {
-        manager: [],
-        assistant: [],
-        helper: [],
-    };
+// Déduplique tous les clients issus des rows, peu importe le rôle
+function collectClients(rows: TeamRow[] = []) {
+    const map = new Map<string | number, any>();
     for (const r of rows) {
-        const role = (r.role ?? "helper") as UserRole;
-        if (r.client) buckets[role].push(r.client);
+        const c = r.client;
+        if (!c) continue;
+        const id = c.id ?? JSON.stringify(c);
+        if (!map.has(id)) map.set(id, c);
     }
-    for (const key of Object.keys(buckets) as UserRole[]) {
-        buckets[key].sort((a, b) =>
-            (a?.name || "").localeCompare(b?.name || "")
-        );
-    }
-    return buckets;
+    return Array.from(map.values()).sort((a, b) =>
+        (a?.name || "").localeCompare(b?.name || "")
+    );
 }
 
 type Sum = {
-    manager: string;
-    assistant: string;
-    helper: string;
-    total: string;
+    manager: number;
+    assistant: number;
+    helper: number;
+    total: number;
 };
+
 function sumByRole(
     entries: { role: UserRole | null; billed_amount: number | null }[] = []
 ): Sum {
@@ -76,7 +73,6 @@ function sumByRole(
 }
 
 function ClientCard({ c }: { c: any }) {
-    console.log(c);
     return (
         <Card key={c.id}>
             <CardHeader>
@@ -98,21 +94,25 @@ function ClientCard({ c }: { c: any }) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
-                                {c.clients_mandats.map((m: any, i: number) => {
+                                {c.clients_mandats.map((m: any) => {
                                     const totals = sumByRole(
                                         m.time_entries ?? []
                                     );
+                                    const over =
+                                        typeof m.quota_max === "number" &&
+                                        totals.total > m.quota_max;
+
                                     return (
                                         <tr key={m.id} className="[&_td]:py-2">
                                             <td>
                                                 {m.mandat_types?.description ??
                                                     `Mandat #${m.id}`}
+                                                &nbsp;
                                                 <span
                                                     className={cn(
                                                         "text-muted-foreground",
-                                                        totals.total >
-                                                            m.quota_max
-                                                            ? " dark:text-red-400 text-red-600"
+                                                        over
+                                                            ? "dark:text-red-400 text-red-600"
                                                             : ""
                                                     )}
                                                 >
@@ -137,8 +137,8 @@ function ClientCard({ c }: { c: any }) {
                                             <td
                                                 className={cn(
                                                     "font-medium",
-                                                    totals.total > m.quota_max
-                                                        ? " dark:text-red-400 text-red-600"
+                                                    over
+                                                        ? "dark:text-red-400 text-red-600"
                                                         : ""
                                                 )}
                                             >
@@ -149,10 +149,10 @@ function ClientCard({ c }: { c: any }) {
                                         </tr>
                                     );
                                 })}
+
                                 {c.unassigned_time_entries?.length ? (
                                     <tr className="[&_td]:py-2 dark:text-red-400 text-red-600">
                                         <td>Hors mandat</td>
-
                                         <td>
                                             {FormatDecimalsToHours(
                                                 sumByRole(
@@ -199,37 +199,24 @@ function ClientCard({ c }: { c: any }) {
 export default function TeamsKanbanClient({ rows }: { rows: TeamRow[] }) {
     const [query, setQuery] = useState("");
     const dq = useDeferredValue(query); // UI plus fluide
-    const buckets = useMemo(() => toBuckets(rows), [rows]);
+
+    const clients = useMemo(() => collectClients(rows), [rows]);
 
     const filtered = useMemo(() => {
-        if (!dq.trim()) return buckets;
+        if (!dq.trim()) return clients;
         const q = dq.trim();
-        return (["manager", "assistant", "helper"] as UserRole[]).reduce(
-            (acc, key) => {
-                acc[key] = buckets[key].filter((c) => matchesQuery(c, q));
-                return acc;
-            },
-            {
-                manager: [] as any[],
-                assistant: [] as any[],
-                helper: [] as any[],
-            } as Record<UserRole, any[]>
-        );
-    }, [buckets, dq]);
-
-    const columns: { key: UserRole; title: string }[] = [
-        { key: "manager", title: "Comme chargé" },
-        { key: "assistant", title: "Comme adjoint" },
-        { key: "helper", title: "Comme aidant" },
-    ];
+        return clients.filter((c) => matchesQuery(c, q));
+    }, [clients, dq]);
 
     return (
         <div className="relative flex flex-1 flex-col">
+            {/* Stats utilisateur */}
             <div className="flex">
                 <div className="flex-4 border-zinc-200 dark:border-zinc-800 flex flex-col">
                     <UserWeeklyStats />
                 </div>
             </div>
+
             {/* Barre de recherche (client-only) */}
             <div className="h-16 border-b flex items-center px-4 sm:px-6 lg:px-8 sticky top-0 bg-background z-10">
                 <Search className="w-5 h-5 opacity-60 pointer-events-none" />
@@ -242,35 +229,28 @@ export default function TeamsKanbanClient({ rows }: { rows: TeamRow[] }) {
                 />
             </div>
 
-            {/* Kanban 3 colonnes */}
-            <div className="grid grid-cols-1 md:grid-cols-3 px-4 py-8 flex-1">
-                {columns.map((col) => (
-                    <section key={col.key} className="space-y-3 px-4">
-                        <div className="flex items-baseline justify-between">
-                            <h3 className="text-base font-semibold">
-                                {col.title}
-                            </h3>
-                            <span className="text-xs text-muted-foreground">
-                                {filtered[col.key].length} client
-                                {filtered[col.key].length > 1 ? "s" : ""}
-                            </span>
-                        </div>
+            {/* Liste unique de cartes */}
+            <div className="px-4 py-8 flex-1">
+                <div className="flex items-baseline justify-between px-1 mb-3">
+                    <h3 className="text-base font-semibold">Clients</h3>
+                    <span className="text-xs text-muted-foreground">
+                        {filtered.length} client{filtered.length > 1 ? "s" : ""}
+                    </span>
+                </div>
 
-                        <div className="space-y-4">
-                            {filtered[col.key].length ? (
-                                filtered[col.key].map((c) => (
-                                    <ClientCard key={c.id} c={c} />
-                                ))
-                            ) : (
-                                <div className="text-sm text-muted-foreground italic">
-                                    {dq
-                                        ? "Aucun client correspondant dans cette colonne."
-                                        : ""}
-                                </div>
-                            )}
-                        </div>
-                    </section>
-                ))}
+                {filtered.length ? (
+                    <div className="space-y-4">
+                        {filtered.map((c) => (
+                            <ClientCard key={c.id} c={c} />
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-sm text-muted-foreground italic">
+                        {dq
+                            ? "Aucun client correspondant."
+                            : "Aucun client à afficher."}
+                    </div>
+                )}
             </div>
         </div>
     );

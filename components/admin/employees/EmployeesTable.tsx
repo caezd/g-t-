@@ -47,6 +47,10 @@ function TableSection({
                                     hint: "Coûtant selon le taux horaire et les charges sociales.",
                                 },
                                 {
+                                    label: "Coûtant interne",
+                                    hint: "Coûtant selon les stands-up, réunions et les charges sociales.",
+                                },
+                                {
                                     label: "Coûtant vide",
                                     hint: "Coûtant des heures travaillées sans être assignés à une équipe, selon le coûtant réel.",
                                 },
@@ -94,14 +98,13 @@ function TableSection({
                                         0
                                     ) ?? 0;
                                 const remainingQuota =
-                                    (e.quota_max ?? 0) -
-                                    (clientsQuota ?? 0) -
-                                    (settings?.base_allowance_hours ?? 0);
+                                    (e.quota_max ?? 0) - (clientsQuota ?? 0);
                                 /* social charge is .18 */
-                                const realCost = e.quota_max
-                                    ? (e.quota_max -
-                                          (settings?.base_allowance_hours ??
-                                              0)) *
+                                const rateCost = e.quota_max
+                                    ? e.rate! * e.quota_max
+                                    : 0;
+                                const realRateCost = e.quota_max
+                                    ? e.quota_max *
                                       e.rate! *
                                       (1 + (e.social_charge ?? 0))
                                     : null;
@@ -149,14 +152,36 @@ function TableSection({
                                             )}
                                         >
                                             {e.quota_max != null
-                                                ? `${remainingQuota} / ${e.quota_max} h`
+                                                ? `${
+                                                      remainingQuota -
+                                                      (settings?.base_allowance_hours ??
+                                                          0)
+                                                  } / ${
+                                                      e.quota_max -
+                                                      (settings?.base_allowance_hours ??
+                                                          0)
+                                                  } h`
                                                 : "Illimité"}
                                         </td>
 
                                         {/** Coûtant réel */}
                                         <td>
                                             {e.quota_max != null
-                                                ? realCost?.toFixed(2) + " $"
+                                                ? realRateCost?.toFixed(2) +
+                                                  " $"
+                                                : "—"}
+                                        </td>
+                                        {/** Coûtant interne
+                                         *  les charges sociales isolées du salaire à l'heure (rate) + le base_allowance hors couvert par focus */}
+                                        <td>
+                                            {e.quota_max != null
+                                                ? (
+                                                      realRateCost! -
+                                                      rateCost! +
+                                                      (settings?.base_allowance_hours ??
+                                                          0) *
+                                                          e.rate!
+                                                  ).toFixed(2) + " $"
                                                 : "—"}
                                         </td>
                                         {/** Coûtant vide */}

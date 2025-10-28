@@ -73,8 +73,7 @@ export default function SettingsForm({
             <CardHeader>
                 <CardTitle>Réglages</CardTitle>
                 <CardDescription>
-                    Ces paramètres s’appliquent à toute l’application. Les
-                    quotas effectifs tiennent compte de l’allocation globale.
+                    Ces paramètres s’appliquent à toute l’application.
                 </CardDescription>
             </CardHeader>
             <CardContent>

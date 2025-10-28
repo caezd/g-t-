@@ -41,6 +41,7 @@ export type Employee = {
     quota_max: number | null;
     rate: number | null;
     matricule: number | null;
+    social_charge: number | null;
     clients_team: ClientTeam[];
 };
 

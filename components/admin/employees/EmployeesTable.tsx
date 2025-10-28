@@ -44,9 +44,15 @@ function TableSection({
                                     label: "Coûtant réel",
                                     hint: "Coûtant selon le taux horaire et les charges sociales.",
                                 },
-                                { label: "Coûtant vide", hint: "" },
+                                {
+                                    label: "Coûtant vide",
+                                    hint: "Coûtant des heures travaillées sans être assignés à une équipe, selon le coûtant réel.",
+                                },
                                 { label: "Date de création" },
-                                { label: "Statut" },
+                                {
+                                    label: "Statut",
+                                    hint: "Un utilisateur inactif ne peut plus se connecter.",
+                                },
                                 { label: "", className: "w-0" },
                             ].map((col) => (
                                 <th
@@ -87,6 +93,17 @@ function TableSection({
                                     ) ?? 0;
                                 const remainingQuota =
                                     (e.quota_max ?? 0) - (clientsQuota ?? 0);
+                                /* social charge is .18 */
+                                const realCost = e.quota_max
+                                    ? e.quota_max *
+                                      e.rate! *
+                                      (1 + (e.social_charge ?? 0))
+                                    : null;
+                                const emptyCost = e.quota_max
+                                    ? remainingQuota *
+                                      e.rate! *
+                                      (1 + (e.social_charge ?? 0))
+                                    : null;
 
                                 return (
                                     <tr
@@ -130,15 +147,16 @@ function TableSection({
                                                 : "Illimité"}
                                         </td>
 
+                                        {/** Coûtant réel */}
                                         <td>
                                             {e.quota_max != null
-                                                ? e.quota_max * e.rate + " $"
+                                                ? realCost?.toFixed(2) + " $"
                                                 : "—"}
                                         </td>
-
+                                        {/** Coûtant vide */}
                                         <td>
                                             {e.quota_max != null
-                                                ? remainingQuota * e.rate + " $"
+                                                ? emptyCost?.toFixed(2) + " $"
                                                 : "—"}
                                         </td>
 

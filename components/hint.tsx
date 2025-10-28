@@ -225,12 +225,7 @@ export function Hint({
         return (
             <HoverCard open={open} onOpenChange={onOpenChange}>
                 <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
-                <HoverCardContent
-                    side={side}
-                    align={align}
-                    className="w-80"
-                    // hover-card est cliquable, donc contenu riche ok
-                >
+                <HoverCardContent side={side} align={align} className="w-80">
                     {Body}
                 </HoverCardContent>
             </HoverCard>
@@ -242,7 +237,6 @@ export function Hint({
             <Tooltip open={open} onOpenChange={onOpenChange}>
                 <TooltipTrigger asChild>{trigger}</TooltipTrigger>
                 <TooltipContent side={side} align={align}>
-                    {/* tooltip = court de préférence, mais accepte ReactNode */}
                     {Body}
                 </TooltipContent>
             </Tooltip>

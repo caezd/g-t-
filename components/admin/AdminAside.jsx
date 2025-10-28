@@ -32,7 +32,7 @@ const NavLink = ({ name, href, Icon }) => {
 
     const classes = cn(
         isActive &&
-            "bg-zinc-100 text-accent-400 bg-white/80 dark:text-accent-400 pointer-events-none"
+            "bg-zinc-100 text-accent-400 bg-white/80 dark:text-accent-400"
     );
     return (
         <Link

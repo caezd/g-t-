@@ -1,30 +1,157 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldUser } from "lucide-react";
+import { ShieldUser, UsersRound, Moon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { SearchFull } from "@/components/search-full";
 import EditEmployeeDialog from "./EditEmployeeDialog";
 import Link from "next/link";
 import { type Employee } from "@/components/admin/employees/EditEmployeeDialog";
 
-// Optionnel: impose un ordre préféré des rôles (sinon ordre alpha)
-const ROLE_ORDER = ["admin"];
-const roleLabels = {
-    admin: "Administrateurs",
-    user: "Employés",
-};
+function TableSection({
+    icon,
+    title,
+    items,
+}: {
+    icon?: React.ReactNode;
+    title: string;
+    items: Employee[];
+}) {
+    return (
+        <section className="border rounded-lg overflow-hidden">
+            <header className="flex items-center justify-between px-4 py-3 border-b bg-background">
+                <div className="flex items-center gap-2">
+                    {icon}
+                    <h3 className="font-semibold">{title}</h3>
+                </div>
+                <Badge variant="secondary">{items.length}</Badge>
+            </header>
 
-function roleLabel(v: string) {
-    if (!v) return "—";
-    return roleLabels[v as keyof typeof roleLabels] ?? v;
-}
+            <div className="divide-y">
+                <table className="w-full">
+                    <thead>
+                        <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10">
+                            {[
+                                "Matricule",
+                                "Nom",
+                                "Disponibilité",
+                                "Coûtant réel",
+                                "Coûtant vide",
+                                "Date de création",
+                                "Statut",
+                                "",
+                            ].map((col) => (
+                                <th key={col} className="px-4 py-2">
+                                    {col}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items.length === 0 ? (
+                            <tr>
+                                <td
+                                    className="p-4 text-sm text-muted-foreground"
+                                    colSpan={6}
+                                >
+                                    Aucun employé dans cette section.
+                                </td>
+                            </tr>
+                        ) : (
+                            items.map((e, i) => {
+                                const clientsQuota =
+                                    e.clients_team?.reduce(
+                                        (acc, ct) => acc + (ct.quota_max ?? 0),
+                                        0
+                                    ) ?? 0;
+                                const remainingQuota =
+                                    (e.quota_max ?? 0) - (clientsQuota ?? 0);
 
-function handleEdit(employeeId: string) {
-    // Implémente la logique d'édition ici, par exemple en ouvrant un modal ou en naviguant vers une page d'édition
-    console.log("Modifier l'employé avec l'ID :", employeeId);
+                                return (
+                                    <tr
+                                        key={e.id}
+                                        className={cn(
+                                            "border-b text-sm",
+                                            i === items.length - 1 &&
+                                                "border-b-0"
+                                        )}
+                                    >
+                                        <td className="p-4 font-mono">
+                                            {e.matricule ?? "—"}
+                                        </td>
+
+                                        <td className="p-4">
+                                            <div className="font-medium truncate">
+                                                <Link
+                                                    className="underline"
+                                                    href={`/admin/employees/${e.id}`}
+                                                >
+                                                    {e.full_name ?? "—"}
+                                                </Link>
+                                            </div>
+                                            <div className="text-zinc-600 dark:text-zinc-500 truncate">
+                                                {e.email ?? "—"}
+                                            </div>
+                                        </td>
+
+                                        <td
+                                            className={cn(
+                                                "p-4",
+                                                e.quota_max != null
+                                                    ? remainingQuota <= 0
+                                                        ? "text-red-600 dark:text-red-400 font-medium"
+                                                        : "text-green-600 dark:text-green-400 font-medium"
+                                                    : "text-muted-foreground"
+                                            )}
+                                        >
+                                            {e.quota_max != null
+                                                ? `${remainingQuota} / ${e.quota_max} h`
+                                                : "Illimité"}
+                                        </td>
+
+                                        <td>
+                                            {e.quota_max != null
+                                                ? e.quota_max * e.rate + " $"
+                                                : "—"}
+                                        </td>
+
+                                        <td>
+                                            {e.quota_max != null
+                                                ? remainingQuota * e.rate + " $"
+                                                : "—"}
+                                        </td>
+
+                                        <td className="p-4 text-sm text-muted-foreground">
+                                            {e.created_at
+                                                ? new Date(
+                                                      e.created_at
+                                                  ).toLocaleDateString("fr-CA")
+                                                : "—"}
+                                        </td>
+
+                                        <td className="p-4 text-sm">
+                                            {e.is_active ? (
+                                                <Badge>Actif</Badge>
+                                            ) : (
+                                                <Badge variant="outline">
+                                                    Inactif
+                                                </Badge>
+                                            )}
+                                        </td>
+
+                                        <td className="text-right p-4">
+                                            <EditEmployeeDialog employee={e} />
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    );
 }
 
 export default function EmployeesTable({
@@ -34,6 +161,7 @@ export default function EmployeesTable({
 }) {
     const [q, setQ] = useState("");
 
+    // Filtre texte global
     const filtered = useMemo(() => {
         const query = q.trim().toLowerCase();
         if (!query) return initialData;
@@ -50,166 +178,68 @@ export default function EmployeesTable({
         });
     }, [q, initialData]);
 
-    // Groupe par rôle, et trie interne par nom
-    const grouped = useMemo(() => {
-        const map = new Map<string, Employee[]>();
-        for (const e of filtered) {
-            const key = e.role ?? "—";
-            if (!map.has(key)) map.set(key, []);
-            map.get(key)!.push(e);
-        }
-
-        // Tri des employés dans chaque groupe (par nom)
-        for (const [, arr] of map) {
-            arr.sort((a, b) =>
+    // 1) Admin (actifs)
+    const admins = useMemo(() => {
+        return filtered
+            .filter((e) => e.is_active && e.role === "admin")
+            .sort((a, b) =>
                 (a.full_name ?? "").localeCompare(b.full_name ?? "", "fr")
             );
-        }
-
-        // Tri des rôles selon ROLE_ORDER puis alpha
-        const roles = Array.from(map.keys()).sort((a, b) => {
-            const ia = ROLE_ORDER.indexOf(a);
-            const ib = ROLE_ORDER.indexOf(b);
-            if (ia !== -1 || ib !== -1) {
-                if (ia === -1) return 1;
-                if (ib === -1) return -1;
-                return ia - ib;
-            }
-            return a.localeCompare(b, "fr");
-        });
-
-        return roles.map((role) => ({ role, items: map.get(role)! }));
     }, [filtered]);
 
+    // 2) Users (actifs)
+    const users = useMemo(() => {
+        return filtered
+            .filter((e) => e.is_active && e.role === "user")
+            .sort((a, b) =>
+                (a.full_name ?? "").localeCompare(b.full_name ?? "", "fr")
+            );
+    }, [filtered]);
+
+    // 3) Inactifs (tous rôles)
+    const inactive = useMemo(() => {
+        return filtered
+            .filter((e) => !e.is_active)
+            .sort((a, b) =>
+                (a.full_name ?? "").localeCompare(b.full_name ?? "", "fr")
+            );
+    }, [filtered]);
+
+    const nothing =
+        admins.length === 0 && users.length === 0 && inactive.length === 0;
+
     return (
-        <div className="">
+        <div>
             <SearchFull
                 query={q}
                 setQuery={setQ}
                 placeholder="Rechercher un employé par nom ou courriel..."
             />
+
             <div className="px-4 py-8 space-y-6">
-                {grouped.length === 0 && (
+                {nothing && (
                     <div className="py-8 text-sm text-muted-foreground">
                         Aucun employé ne correspond à la recherche.
                     </div>
                 )}
 
-                {grouped.map(({ role, items }) => (
-                    <section key={role} className="border rounded-lg">
-                        {/* En-tête de groupe */}
-                        <header className="flex items-center justify-between px-4 py-3 border-b">
-                            <div className="flex items-center gap-2">
-                                {role === "admin" ? (
-                                    <ShieldUser className="h-4 w-4" />
-                                ) : null}
-                                <h3 className="font-semibold">
-                                    {roleLabel(role)}
-                                </h3>
-                            </div>
-                            <Badge variant="secondary">{items.length}</Badge>
-                        </header>
+                <TableSection
+                    icon={<ShieldUser className="h-4 w-4" />}
+                    title="Administrateurs"
+                    items={admins}
+                />
 
-                        {/* Liste des employés */}
-                        <div className="divide-y">
-                            <table className="w-full">
-                                <thead>
-                                    <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10">
-                                        {[
-                                            "Matricule",
-                                            "Nom",
-                                            "Disponibilité",
-                                            "Date de création",
-                                            "Statut",
-                                            "",
-                                        ].map((col) => (
-                                            <th key={col} className="px-4 py-2">
-                                                {col}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {items.map((e, i) => {
-                                        /* récupéter quota_max de chaque entrée dans clients_team et faire une soustraction du quota max de item */
-                                        const clientsQuota =
-                                            e.clients_team?.reduce(
-                                                (acc, client) =>
-                                                    acc +
-                                                    (client.quota_max ?? 0),
-                                                0
-                                            );
-                                        const remainingQuota =
-                                            e.quota_max - (clientsQuota ?? 0);
-                                        return (
-                                            <tr
-                                                key={e.id}
-                                                className={cn(
-                                                    items.length - 1 !== i
-                                                        ? "border-b"
-                                                        : ""
-                                                )}
-                                            >
-                                                <td className="p-4 font-mono">
-                                                    {e.matricule ?? "—"}
-                                                </td>
-                                                <td className="p-4 flex flex-col justify-center">
-                                                    <div className="font-medium truncate">
-                                                        <Link
-                                                            href={`/admin/employees/${e.id}`}
-                                                        >
-                                                            {e.full_name ?? "—"}
-                                                        </Link>
-                                                    </div>
-                                                    <div className="text-muted-foreground text-sm truncate">
-                                                        {e.email ?? "—"}
-                                                    </div>
-                                                </td>
+                <TableSection
+                    icon={<UsersRound className="h-4 w-4" />}
+                    title="Employés"
+                    items={users}
+                />
 
-                                                <td
-                                                    className={cn(
-                                                        "p-4 text-sm",
-                                                        e.quota_max !== null &&
-                                                            remainingQuota! <= 0
-                                                            ? "text-red-600 dark:text-red-400 font-medium"
-                                                            : "text-green-600 dark:text-green-400 font-medium"
-                                                    )}
-                                                >
-                                                    {e.quota_max != null
-                                                        ? `${remainingQuota} / ${e.quota_max} h`
-                                                        : "Illimité"}
-                                                </td>
-
-                                                <td className="p-4 text-sm text-muted-foreground">
-                                                    {e.created_at
-                                                        ? new Date(
-                                                              e.created_at
-                                                          ).toLocaleDateString()
-                                                        : "—"}
-                                                </td>
-
-                                                <td className="p-4 text-sm">
-                                                    {e.is_active ? (
-                                                        <Badge>Actif</Badge>
-                                                    ) : (
-                                                        <Badge variant="outline">
-                                                            Inactif
-                                                        </Badge>
-                                                    )}
-                                                </td>
-                                                <td className="text-right p-4">
-                                                    <EditEmployeeDialog
-                                                        employee={e}
-                                                    />
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </section>
-                ))}
+                <TableSection
+                    icon={<Moon className="h-4 w-4" />}
+                    title="Inactifs"
+                    items={inactive}
+                />
             </div>
         </div>
     );

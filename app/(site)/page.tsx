@@ -7,7 +7,7 @@ import { EditTimeEntryDialog } from "@/components/forms/EditTimeEntryDialog";
 
 import { cn } from "@/lib/utils";
 
-import { getDateWeek, weekRange, FormatDecimalsToHours } from "@/utils/date";
+import { getDateWeek, FormatDecimalsToHours } from "@/utils/date";
 import { DollarSign, Handshake, Pencil } from "lucide-react";
 
 function startOfWeekSunday(date: Date) {

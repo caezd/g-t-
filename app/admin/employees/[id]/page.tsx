@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/utils/user";
 import ClientPanel from "./ClientPanel";
 
-export default async function Page({ params }: { params: { id: string } }) {
+export default async function Page({ params }: { params: Promise<any> }) {
     const supabase = await createClient();
     const { data } = await supabase.auth.getClaims();
 

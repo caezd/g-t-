@@ -7,127 +7,195 @@ import { cookies } from "next/headers";
 import DocsKeyBoundary from "./DocsKeyBoundary";
 import { baseOptions } from "@/lib/layout.shared";
 import { source } from "@/lib/source";
-import { createClient } from "@/lib/supabase/server";
-import { Icon } from "lucide-react";
+import { getSession, checkIfUserIsAdmin } from "@/lib/supabase/server";
+
+// Types
+export type AccessMode = "public" | "auth" | "admin" | "client";
 
 export type AccessRule = {
+    mode?: AccessMode;
     clients?: string[];
-    mode?: "any" | "all";
-    inherit?: boolean; // si true dans un index.mdx => politique du dossier
-};
-
-export type NavMeta = {
-    summary?: string;
-    badge?: string;
-    icon?: string;
-    hidden?: boolean;
+    match?: "any" | "all";
+    inherit?: boolean;
 };
 
 export type FMEntry = {
     title?: string;
     access?: AccessRule;
-    public?: boolean; // <--- ajouté
+    public?: boolean;
 };
 
 export type FMIndex = {
     meta: Record<string, FMEntry>;
 };
 
+// Helpers
+function normUrl(u?: string | null) {
+    if (!u) return null;
+    let s = u.replace(/^\/+|\/+$/g, "");
+    if (!s) s = "index";
+    if (s.endsWith("/index")) s = s.slice(0, -"/index".length);
+    return s;
+}
+
+type PageNode = {
+    type: "page" | "folder" | "separator";
+    url?: string;
+    name?: string;
+    index?: { url?: string };
+    children?: PageNode[];
+};
+
+type Ctx = { authed: boolean; admin: boolean; userSlugClients: string[] };
+
+// Utilise déjà ta normUrl(u) existante
+function extractClientSlugFromUrl(url?: string | null) {
+    if (!url) return null;
+    const k = normUrl(url); // e.g. "wiki/clients/clic-montreal"
+    const m = /^wiki\/clients\/([^/]+)/.exec(k);
+    return m?.[1] ?? null;
+}
+
+function getFMEntry(
+    meta: Record<string, FMEntry>,
+    url?: string | null
+): FMEntry | undefined {
+    const key = normUrl(url);
+    return key ? meta[key] : undefined;
+}
+
+function canAccessUrl(
+    meta: Record<string, FMEntry>,
+    url: string | undefined,
+    ctx: Ctx
+): boolean {
+    if (ctx?.admin) return true;
+    const fm = getFMEntry(meta, url);
+
+    // Par défaut: accessible (UI seulement — la vraie sécurité doit être côté serveur)
+    if (!fm) return false;
+    if (fm.public === true) return true;
+
+    const rule = fm.access;
+    if (!rule?.mode || rule.mode === "public") return true;
+
+    if (rule.mode === "auth") return !!ctx.authed;
+    if (rule.mode === "admin") return !!ctx.admin;
+
+    if (rule.mode === "client") {
+        if (!ctx.authed) return false;
+        // 1) Si des clients explicites sont fournis dans le front-matter, on les utilise
+        const wanted =
+            rule.clients && rule.clients.length > 0
+                ? rule.clients
+                : (() => {
+                      // 2) Sinon on dérive du chemin (/wiki/clients/<slug>/…)
+                      const slug = extractClientSlugFromUrl(url);
+                      return slug ? [slug] : [];
+                  })();
+
+        if (wanted.length === 0) return false;
+        return wanted.some((s) => ctx.userSlugClients.includes(s));
+    }
+
+    return true;
+}
+
+function pruneSeparators(nodes: PageNode[]): PageNode[] {
+    const out: PageNode[] = [];
+    const isNonSepAhead = (i: number) =>
+        nodes.slice(i + 1).some((n) => n.type !== "separator");
+    for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        if (n.type === "separator") {
+            if (out.length === 0) continue; // pas de séparateur en tête
+            if (!isNonSepAhead(i)) continue; // pas de séparateur en queue
+        }
+        out.push(n);
+    }
+    // Supprime les doublons consécutifs si jamais
+    return out.filter(
+        (n, i, arr) =>
+            !(
+                n.type === "separator" &&
+                i > 0 &&
+                arr[i - 1].type === "separator"
+            )
+    );
+}
+
+function filterTreeNode(
+    node: PageNode,
+    meta: Record<string, FMEntry>,
+    ctx: Ctx
+): PageNode | null {
+    if (node.type === "page") {
+        return canAccessUrl(meta, node.url, ctx) ? node : null;
+    }
+
+    if (node.type === "folder") {
+        // Droit du dossier = droit de son index (s’il existe). Un index privé masque le dossier entier
+        const folderAllowed = node.index
+            ? canAccessUrl(meta, node.index.url, ctx)
+            : true;
+        if (!folderAllowed) return null;
+
+        const keptChildren = (node.children ?? [])
+            .map((c) => filterTreeNode(c, meta, ctx))
+            .filter(Boolean) as PageNode[];
+
+        const cleaned = pruneSeparators(keptChildren);
+
+        // Si le dossier n’a ni index autorisé ni enfant restant, on le retire
+        const hasIndexPage = node.index
+            ? canAccessUrl(meta, node.index.url, ctx)
+            : false;
+        if (!hasIndexPage && cleaned.length === 0) return null;
+
+        return { ...node, children: cleaned };
+    }
+
+    // separator: on laisse passer, le nettoyage se fait plus haut
+    return node;
+}
+
+function filterTree(raw: any, metaIndex: FMIndex["meta"], ctx: Ctx) {
+    // clone défensif déjà fait chez toi -> on prend 'raw'
+    const root = { ...raw } as PageNode & { children: PageNode[] };
+    const children = (root.children ?? [])
+        .map((c) => filterTreeNode(c, metaIndex, ctx))
+        .filter(Boolean) as PageNode[];
+
+    return { ...root, children: pruneSeparators(children) };
+}
+
 async function buildFMIndex(): Promise<FMIndex> {
     const meta: FMIndex["meta"] = {};
-
     const pages = await source.getPages();
 
     for (const p of pages) {
-        const fm = (p?.data?._exports?.frontmatter ?? {}) as FMEntry;
-        if (fm) {
-            meta[p.data?.title] = { ...fm };
-        }
+        // Supporte à la fois data._exports.frontmatter et data.frontmatter
+        const fm = (p?.data?._exports?.frontmatter ??
+            p?.data?.frontmatter ??
+            {}) as FMEntry;
+
+        // Clé 1: URL canonique
+        const kUrl = normUrl(p?.url);
+        if (kUrl) meta[kUrl] = { ...fm };
     }
 
     return { meta };
 }
 
-function squashSeparators(nodes: any[]) {
-    const out: any[] = [];
-    let prevSep = true;
-    for (const n of nodes) {
-        if (n?.type === "separator") {
-            if (prevSep) continue;
-            prevSep = true;
-            out.push(n);
-        } else {
-            prevSep = false;
-            out.push(n);
-        }
-    }
-    if (out[out.length - 1]?.type === "separator") out.pop();
-    return out;
-}
-
-function isNodeAllowedByFM(node: any, fm: any, userClientSlugs: string[]) {
-    if (node?.type === "separator") return true;
-    if (fm?.public) return true;
-    if (!fm?.access) return false;
-
-    // Ta règle existante (exemple) : mode === "client"
-    const { mode } = fm.access;
-    if (mode === "client") {
-        const key = node?.name ?? "";
-        return userClientSlugs.length > 0 && userClientSlugs.includes(key);
-    }
-
-    return false;
-}
-
-function processRootChildrenOnly(
-    rootFolder: any,
-    meta: any,
-    userClientSlugs: string[]
-) {
-    if (!Array.isArray(rootFolder?.children)) return rootFolder;
-    const kept: any[] = [];
-    for (const child of rootFolder.children) {
-        const filtered = filterNodeRec(child, meta, userClientSlugs);
-        if (filtered) kept.push(filtered);
-    }
-    // mutation in-place
-    rootFolder.children = squashSeparators(kept);
-    return rootFolder;
-}
-
-function filterNodeRec(
-    node: any,
-    meta: any,
-    userClientSlugs: string[]
-): any | null {
-    if (!node) return null;
-    const fm = meta.meta[node?.name ?? ""];
-
-    if (node.type === "folder") {
-        // on traite récursivement ses enfants
-        const kept: any[] = [];
-        for (const child of node.children ?? []) {
-            const filtered = filterNodeRec(child, meta, userClientSlugs);
-            if (filtered) kept.push(filtered);
-        }
-        // mutation in-place
-        node.children = squashSeparators(kept);
-
-        // garder le dossier si :
-        //  - il a encore des enfants visibles, OU
-        //  - son propre FM l’autorise (afficher un folder "vide" autorisé)
-        if (
-            (node.children?.length ?? 0) > 0 ||
-            isNodeAllowedByFM(node, fm, userClientSlugs)
-        ) {
-            return node; // on retourne le *même* objet (toutes les props intactes)
-        }
-        return null; // parent le retirera
-    }
-
-    // page / separator
-    return isNodeAllowedByFM(node, fm, userClientSlugs) ? node : null;
+function slugify(str: string) {
+    return String(str)
+        .normalize("NFKD") // split accented characters into their base characters and diacritical marks
+        .replace(/[\u0300-\u036f]/g, "") // remove all the accents, which happen to be all in the \u03xx UNICODE block.
+        .trim() // trim leading or trailing whitespace
+        .toLowerCase() // convert to lowercase
+        .replace(/[^a-z0-9 -]/g, "") // remove non-alphanumeric characters
+        .replace(/\s+/g, "-") // replace spaces with hyphens
+        .replace(/-+/g, "-"); // remove consecutive hyphens
 }
 
 export default async function DocsRootLayout({
@@ -135,41 +203,41 @@ export default async function DocsRootLayout({
 }: {
     children: React.ReactNode;
 }) {
-    const bump = cookies().get("docs_bump")?.value ?? "0";
-    const supabase = await createClient();
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
+    const bump = (await cookies()).get("docs_bump")?.value ?? "0";
 
-    let userClientSlugs: string[] = [];
-    if (user?.id) {
-        const { data: slugs } = await supabase.rpc("get_user_client_slugs", {
-            uid: user.id,
+    const { session, supabase } = await getSession();
+    const authed = !!session?.sub;
+    const admin = authed
+        ? await checkIfUserIsAdmin(session!.sub, supabase)
+        : false;
+
+    /* Récupération du nom des clients des équipes */
+    let userSlugClients: string[] = [];
+    if (authed) {
+        const { data: names } = await supabase.rpc("get_user_client_slugs", {
+            uid: session!.sub,
         });
-        if (Array.isArray(slugs)) userClientSlugs = slugs;
+        if (Array.isArray(names))
+            userSlugClients = names.map((n) => slugify(n));
     }
 
+    const ctx = { authed, admin, userSlugClients };
+
+    // Clone du tree pour mutation safe
     const raw = JSON.parse(JSON.stringify(source.pageTree));
 
     const meta = await buildFMIndex();
-
-    // Si ton pageTree est un seul root objet (cas le plus courant avec Fumadocs)
-    for (const child of raw.children ?? []) {
-        if (child?.type === "folder" && child?.root === true) {
-            processRootChildrenOnly(child, meta, userClientSlugs);
-        }
-    }
+    console.log(JSON.stringify(meta, null, 2));
+    const filtered = filterTree(raw, meta.meta, ctx);
 
     return (
         <DocsKeyBoundary className="w-full flex flex-1" bump={bump}>
             <DocsLayout
                 {...baseOptions()}
-                tree={raw}
+                tree={filtered}
                 sidebar={{
                     tabs: {
-                        transform: (option, node) => ({
-                            ...option,
-                        }),
+                        transform: (option, node) => ({ ...option }),
                     },
                 }}
             >

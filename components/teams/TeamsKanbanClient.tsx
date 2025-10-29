@@ -8,6 +8,7 @@ import { Search } from "lucide-react";
 import { FormatDecimalsToHours } from "@/utils/date";
 import { UserWeeklyStats } from "../UserWeeklyStats";
 import { cn } from "@/lib/cn";
+import { Badge } from "../ui/badge";
 
 type UserRole = "manager" | "assistant" | "helper";
 type TeamRow = { role: UserRole | null; client: any | null };
@@ -41,6 +42,7 @@ function collectClients(rows: TeamRow[] = []) {
     for (const r of rows) {
         const c = r.client;
         if (!c) continue;
+        c.role = r.role;
         const id = c.id ?? JSON.stringify(c);
         if (!map.has(id)) map.set(id, c);
     }
@@ -76,8 +78,9 @@ function ClientCard({ c }: { c: any }) {
     return (
         <Card key={c.id}>
             <CardHeader>
-                <CardTitle className="truncate">
+                <CardTitle className="flex items-center gap-2">
                     {c.name ?? `Client #${c.id}`}
+                    {c.role && <Badge className="ml-auto">Aidant</Badge>}
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">

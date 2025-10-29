@@ -277,7 +277,7 @@ export default function HomePage() {
                 <UserWeeklyStats nonce={statsNonce} />
                 <TimeEntryForm onCreated={handleEntryCreated} />
             </div>
-            <aside className="flex-3 lg:w-96 lg:overflow-y-auto lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 py-12 overflow-auto max-h-screen">
+            <aside className="flex-3 lg:w-96 lg:overflow-y-auto lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 py-12 overflow-auto max-h-[calc(100vh-4rem)]">
                 <div className="max-w-lg px-6 mx-auto space-y-10">
                     {grouped.map((g, gi) => (
                         <section key={gi}>

@@ -598,6 +598,7 @@ export function TimeEntryForm({ onCreated }) {
                                                 field.onChange(e || new Date());
                                                 setIsCalendarOpen(false);
                                             }}
+                                            weekStartsOn={0}
                                             disabled={(date) =>
                                                 date > new Date() ||
                                                 date <
@@ -607,7 +608,8 @@ export function TimeEntryForm({ onCreated }) {
                                                         year: new Date().getFullYear(),
                                                         date:
                                                             new Date().getDate() -
-                                                            new Date().getDay(),
+                                                            new Date().getDay() -
+                                                            1,
                                                     })
                                             }
                                         />

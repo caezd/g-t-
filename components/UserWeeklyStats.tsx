@@ -11,6 +11,7 @@ import {
 } from "@/utils/date";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Hint } from "./hint";
 
 type Stats = {
     rangeLabel: string; // ex. "Du 12 au 18 oct."
@@ -126,16 +127,16 @@ export function UserWeeklyStats({
         // setup l'alerte si banque négative
         if (bankAvailable < 0) {
             setAlert(
-                `Votre banque d'heures est négative de ${FormatDecimalsToHours(
+                `Vos heures facturables sont négatives de ${FormatDecimalsToHours(
                     bankAvailable
-                )}. Pensez à aviser votre chargé de comptes ou votre client !`
+                )}. Pensez à aviser votre employeur !`
             );
         }
         // setup l'alerte si banque plus grande que 8h le vendredi
         const now = new Date();
         if (now.getDay() === 5 && bankAvailable > 8) {
             setAlert(
-                "Votre banque est élevée pour un vendredi. N'oubliez pas de faire le point de votre semaine !"
+                "Vos heures facturables sont élevées pour un vendredi. N'oubliez pas de faire le point de votre semaine !"
             );
         }
     }, [stats]);
@@ -189,7 +190,8 @@ export function UserWeeklyStats({
             unit: "hrs",
         },
         {
-            label: `Banque disponible`,
+            label: `Heures facturables`,
+            hint: "Total des heures facturables selon les heures travaillées chaque semaine.",
             amount: stats.bankAvailable,
             unit: "hrs",
             conditionalStyle: {
@@ -221,8 +223,11 @@ export function UserWeeklyStats({
                         "border-zinc-200 dark:border-zinc-800 px-4 py-6 sm:px-6 lg:px-8"
                     )}
                 >
-                    <p className="text-sm font-medium leading-6 dark:text-zinc-400">
+                    <p className="text-sm font-medium leading-6 dark:text-zinc-400 inline-flex items-center">
                         {item.label}
+                        {item.hint && (
+                            <Hint content={item.hint} className="ml-1" />
+                        )}
                     </p>
                     <p className="mt-2 flex items-baseline gap-x-2">
                         {item.render ? (

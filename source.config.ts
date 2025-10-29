@@ -13,7 +13,7 @@ export const docs = defineDocs({
             public: z.boolean().optional(),
             access: z
                 .object({
-                    mode: z.enum(["client", "any", "all"]).optional(),
+                    mode: z.enum(["client", "admin", "public"]).optional(),
                 })
                 .optional(),
         }),

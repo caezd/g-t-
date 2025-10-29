@@ -12,7 +12,7 @@ var docs = defineDocs({
       title: z.string().min(1),
       public: z.boolean().optional(),
       access: z.object({
-        mode: z.enum(["client", "any", "all"]).optional()
+        mode: z.enum(["client", "admin", "public"]).optional()
       }).optional()
     })
   })

@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
-import path from "path";
 
 const PUBLIC_PATHS = [
     "/auth/set-password",

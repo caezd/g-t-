@@ -52,8 +52,6 @@ export default async function Page() {
 
     if (error) throw error;
 
-    console.log(data);
-
     // ⬇️ passe des données sérialisables à ton composant client
     return <TeamsKanbanClient rows={data ?? []} />;
 }

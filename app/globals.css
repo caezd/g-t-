@@ -77,3 +77,11 @@
 @theme {
     --color-accent-400: #ef8b59;
 }
+
+.prose img,
+.prose video {
+    max-width: 80%;
+    object-fit: contain;
+    height: unset;
+    @apply border;
+}

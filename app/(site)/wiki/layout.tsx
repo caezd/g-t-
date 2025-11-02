@@ -77,10 +77,6 @@ function canAccessUrl(
     if (fm.public === true) return true;
 
     const rule = fm.access;
-    if (!rule?.mode || rule.mode === "public") return true;
-
-    if (rule.mode === "auth") return !!ctx.authed;
-    if (rule.mode === "admin") return !!ctx.admin;
 
     if (rule.mode === "client") {
         if (!ctx.authed) return false;

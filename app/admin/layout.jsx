@@ -1,6 +1,7 @@
 import Header from "@/components/layout/Header";
 
 import AdminAside from "@/components/admin/AdminAside";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata = {
     title: "Gétime",
@@ -15,6 +16,7 @@ export default function AdminLayout({ children }) {
                 <Header />
                 <main className="flex flex-1 overflow-auto">{children}</main>
             </div>
+            <Analytics />
         </section>
     );
 }

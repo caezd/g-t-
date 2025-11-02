@@ -124,11 +124,11 @@ export function SidebarContent(props: ComponentProps<"aside">) {
             {...props}
             data-collapsed={collapsed}
             className={cn(
-                "rtl:left-auto rtl:right-(--removed-body-scroll-bar-size,0) flex flex-col items-end top-(--fd-sidebar-top) bottom-(--fd-sidebar-margin) z-20 bg-fd-card text-sm border-e transition-[top,opacity,translate,width] duration-200 max-md:hidden *:w-(--fd-sidebar-width)",
-                collapsed && [
+                "rtl:left-auto rtl:right-(--removed-body-scroll-bar-size,0) flex flex-col items-end top-(--fd-sidebar-top) bottom-(--fd-sidebar-margin) z-20 bg-fd-card text-sm border-e transition-[top,opacity,translate,width] duration-200 max-md:hidden *:w-(--fd-sidebar-width) fixed",
+                /*  collapsed && [
                     "rounded-xl border translate-x-(--fd-sidebar-offset) rtl:-translate-x-(--fd-sidebar-offset)",
                     hover ? "z-50 shadow-lg" : "opacity-0",
-                ],
+                ], */
                 props.className
             )}
             style={
@@ -138,10 +138,10 @@ export function SidebarContent(props: ComponentProps<"aside">) {
                         ? "calc(var(--spacing) * 2)"
                         : "calc(16px - 100%)",
                     "--fd-sidebar-margin": collapsed ? "0.5rem" : "0px",
-                    "--fd-sidebar-top": `calc(var(--fd-banner-height) + var(--fd-nav-height) + var(--fd-sidebar-margin))`,
-                    width: collapsed
+                    "--fd-sidebar-top": `calc(4rem + var(--fd-nav-height) + var(--fd-sidebar-margin))`,
+                    width: /* collapsed
                         ? "var(--fd-sidebar-width)"
-                        : "calc(var(--spacing) + var(--fd-sidebar-width) + var(--fd-layout-offset))",
+                        :  */ "calc(var(--spacing) + var(--fd-sidebar-width) + var(--fd-layout-offset))",
                 } as object
             }
             onPointerEnter={(e) => {

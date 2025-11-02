@@ -1,0 +1,120 @@
+---
+title: "Fournisseurs"
+description: "Documentation sur les procédures internes de l'entreprise"
+---
+
+## Saisie des factures
+
+### 1. Réception et préparation des documents
+
+    - [ ] La facture est reçue.
+    - [ ] Le nom du fournisseur est exact et correspond à celui dans QB.
+    - [ ] Le numéro de facture est unique et n'existe pas déjà dans QB.
+    - [ ] La date de facturation et d'échéance sont visibles.
+    - [ ] Le montant total de la facture est clair et inclut les taxes applicables.
+    - [ ] La pièce justificative (PDF, photo, capture d'écran) est lisible et jointe à la transaction.
+    - [ ] Si applicable, le bon de commande ou contrat est joint à la facture.
+    - [ ] Vérifier que la facture correspond à une dépense réelle et autorisée.
+
+### 2. Vérification du contenu et des montants
+
+    - [ ] Les quantités et prix unitaires sont exacts et correspondent au bon de commande.
+    - [ ] Le sous-total est cohérent avec les calculs de la facture.
+    - [ ] Les taxes (TPS/TVQ) sont correctement calculées, appliquées et indiquées.
+    - [ ] Aucun escompte, crédit ou note de crédit n'est oublié.
+    - [ ] Le total général est vérifié et correspond à la pièce justificative.
+
+### 3. Codification comptable
+
+    - [ ] Le compte de dépense est approprié.
+    - [ ] Le fournisseur est bien sélectionné dans QB.
+    - [ ] Les taxes sont codées selon les bons taux : TPS 5% et TVQ 9.975%. Exonération justifiée au besoin.
+    - [ ] La classe, le projet ou département est bien sélectionné.
+    - [ ] Si la dépense concerne une immobilisation, l'enregistrer dans un compte d'actifs.
+    - [ ] Si applicable, vérifier la monnaie (CAD, USD, autre) et le taux de change.
+    - [ ] Si remboursement d'employé, classer sous comptes à payer -> employés.
+
+### 4. Échéance et conditions de paiement
+
+    - [ ] Entrer la date d'échéance selon les termes du fournisseur (Net 30, 45, etc.).
+    - [ ] Si applicable, appliquer les conditions d'escompte.
+    - [ ] Confirmer le solde à payer (aucun double paiement, pas de facture déjà réglée, etc.).
+    - [ ] Vérifier la fréquence (facture unique, récurrente ou mensuelle).
+    - [ ] Confirmer le mode de paiement prévu.
+
+### 5. Validation finale avant enregistrement
+
+    - [ ] Relire tous les champs (date, fournisseur, compte, montant, taxes).
+    - [ ] Vérifier que l'écriture comptable balance (débit = crédit).
+    - [ ] S'assurer que la pièce justificative soit bien jointe à la facture dans QB.
+    - [ ] Confirmer que la facture est attribuée à la bonne période comptable.
+    - [ ] Si facture partagée entre clients/projets -> appliquer la répartition correcte.
+    - [ ] Vérifier que la facture n'a pas été saisie deux fois.
+    - [ ] Enregistrer la facture après validation complète.
+
+### 6. Suivi et archivage
+
+    - [ ] Déplacer la facture et ses pièces justificatives dans le dossier `SharePoint / Fournisseurs / [MOIS ANNÉE]`.
+    - [ ] Vérifier que la facture apparait dans le rapport des comptes fournisseurs.
+    - [ ] Noter les factures en attente d'approbation ou de paiement.
+    - [ ] Communiquer les anomalies au chargé de compte.
+
+## Paiements des factures
+
+### 1. Préparation des documents requis
+
+    - [ ] Toutes les factures fournisseurs sont reçues et enregistrées dans QB.
+    - [ ] Chaque facture comporte :
+        - [ ] Nom du fournisseur
+        - [ ] Numéro de facture unique
+        - [ ] Date de facturation et la date d'échéance
+        - [ ] Montant total à payer incluant les taxes
+        - [ ] Pièce justificative jointe
+    - [ ] Vérifier que toutes les factures sont approuvées par la personne responsable du service ou du projet.
+    - [ ] Vérifier qu'aucune facture n'a déjà été payée ou doublée.
+
+### 2. Vérification comptable
+
+    - [ ] Les comptes de dépenses sont correctement assignés (loyer, fourniture, honoraires, etc.).
+    - [ ] Les taxes (TPS/TVQ) sont correctement codées :
+        - [ ] TPS à 5%
+        - [ ] TVQ à 9.975%
+        - [ ] La classe, projet ou département sont bien sélectionnés.
+    - [ ] Vérifier si la facture est capitalisable (immobilisation) plutôt qu'en charge.
+    - [ ] Confirmer la monnaie (CAD ou USD) et le taux de change si applicable.
+    - [ ] S'assurer que les crédits fournisseurs ont été appliqués (si rabais ou ajustements).
+
+### 3. Validation de l'échéance et du mode de paiement
+
+    - [ ] Vérifier la date d'échéance de chaque facture.
+    - [ ] Respecter les conditions de paiement (Net 30, 45, escompte 2% / 10 jours, etc.).
+    - [ ] Confirmer que le solde à payer est exact (aucun double paiement ou facture partiellement réglée).
+    - [ ] Vérifier les comptes bancaires ou coordonnées du fournisseur pour le paiement.
+    - [ ] S'assurer que le compte bancaire de sortie (ou carte) est le bon.
+
+### 4. Validation interne et approbation
+
+    - [ ] Vérifier le montant total du lot des paiements à effectuer.
+    - [ ] Réviser le rapport "À payer" pour confirmer les soldes.
+    - [ ] Identifier les paiements urgens ou prioritaires.
+    - [ ] Confirmer que tous les paiements sont autorisés selon la politique interne.
+    - [ ] Obtenir la signature ou approbation du responsable.
+    - [ ] Si plusieurs comptes bancaires existent, confirmer le bon compte de décaissement.
+
+### 5. Éxécution des paiements
+
+    - [ ] Effectuer le paiement via le système choisi (QB, Plooto, banque, etc.).
+    - [ ] Vérifier la correspondance entre le total payé et le total approuvé.
+    - [ ] S'assurer que le numéro de confirmation ou chèque est bien enregistré.
+    - [ ] Ajouter la preuve de paiement (PDF, capture, relevé) à la facture et dans le SharePoint.
+    - [ ] Mettre à jour le statut "Payée" dans QB.
+    - [ ] Envoyer les avis de paiement ou remises aux fournisseurs si nécessaire.
+
+### 6. Suivi post-paiement et archivage
+
+    - [ ] Sauvegarder :
+        - [ ] Liste des paiements effectués
+        - [ ] Reçus bancaires et confirmations
+        - [ ] Factures payées et preuves de paiement
+    - [ ] Archiver les documents dans `SharePoint / Paiements Fournisseurs / [MOIS ANNÉE]`.
+    - [ ] Vérifier que le rapport des comptes fournisseurs est à jour après paiement.

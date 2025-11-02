@@ -14,7 +14,6 @@ import {
     Home,
     BookMarked,
 } from "lucide-react";
-import { ThemeSwitcher } from "../theme-switcher";
 
 const links = [
     { name: "Bible", href: "/admin", icon: BookMarked },
@@ -61,9 +60,6 @@ const AdminAside = () => {
                         accentColor="transparent"
                     />
                     <p className="text-xl font-semibold">{COMPANY_NAME}</p>
-                    <span className="ml-auto">
-                        <ThemeSwitcher />
-                    </span>
                 </header>
 
                 <nav className="flex flex-1 flex-col px-6">

@@ -35,11 +35,11 @@ export function LayoutBody(props: ComponentProps<"main">) {
     const { collapsed } = useSidebar();
 
     return (
-        <main
+        <section
             id="nd-docs-layout"
             {...props}
             className={cn(
-                "flex flex-1 pt-(--fd-nav-height) transition-[padding] fd-default-layout",
+                "flex flex-1 pt-(--fd-nav-height) transition-[padding] fd-default-layout w-full",
                 /* !collapsed && 'mx-(--fd-layout-offset)', */
                 props.className
             )}
@@ -51,7 +51,7 @@ export function LayoutBody(props: ComponentProps<"main">) {
             }}
         >
             {props.children}
-        </main>
+        </section>
     );
 }
 

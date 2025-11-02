@@ -80,7 +80,9 @@ function ClientCard({ c }: { c: any }) {
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     {c.name ?? `Client #${c.id}`}
-                    {c.role && <Badge className="ml-auto">Aidant</Badge>}
+                    {c.role === "helper" && (
+                        <Badge className="ml-auto">Aidant</Badge>
+                    )}
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">

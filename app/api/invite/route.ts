@@ -52,11 +52,14 @@ export async function POST(req: Request) {
         const admin = createAdminClient();
 
         /* TODO: vérifier que l'user n'existe pas ? */
+        const full_name =
+            [first_name, last_name].filter(Boolean).join(" ").trim() || null;
         const { data: invited, error: invErr } =
             await admin.auth.admin.inviteUserByEmail(email, {
                 data: {
                     first_name,
                     last_name,
+                    full_name,
                     role,
                     rate,
                     quota_max,

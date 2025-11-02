@@ -62,13 +62,14 @@ export async function updateSession(request: NextRequest) {
     const { pathname } = request.nextUrl;
     const user = data?.claims;
 
-    if (
-        !user &&
-        pathname !== "/auth/login" &&
-        !PUBLIC_PATHS.includes(pathname)
-    ) {
-        const absoluteURL = new URL("/auth/login", request.nextUrl.origin);
-        return NextResponse.redirect(absoluteURL.toString());
+    if (!PUBLIC_PATHS.includes(pathname)) {
+        if (!user && pathname !== "/auth/login") {
+            const absoluteURL = new URL("/auth/login", request.nextUrl.origin);
+            return NextResponse.redirect(absoluteURL.toString());
+        } else if (user && PUBLIC_PATHS.includes(pathname)) {
+            const absoluteURL = new URL("/", request.nextUrl.origin);
+            return NextResponse.redirect(absoluteURL.toString());
+        }
     }
 
     const isAdmin = await checkIfUserIsAdmin(user?.sub || "", supabase);

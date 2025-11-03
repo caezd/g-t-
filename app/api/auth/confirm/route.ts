@@ -12,11 +12,18 @@ export async function GET(request: NextRequest) {
     if (token_hash && type) {
         const supabase = await createClient();
 
-        const { error } = await supabase.auth.verifyOtp({
+        const { data, error } = await supabase.auth.verifyOtp({
             type,
             token_hash,
         });
-        if (!error) {
+        if (data?.user && data?.session) {
+            redirect("/auth/set-password");
+        } else {
+            console.log(error);
+            redirect(`/auth/error?error=${error?.message}`);
+        }
+        redirect(next);
+        /*  if (!error) {
             const { data, error: userErr } = await supabase.auth.getClaims();
             const user = data?.claims;
 
@@ -29,7 +36,7 @@ export async function GET(request: NextRequest) {
         } else {
             // redirect the user to an error page with some instructions
             redirect(`/auth/error?error=${error?.message}`);
-        }
+        } */
     }
 
     // redirect the user to an error page with some instructions

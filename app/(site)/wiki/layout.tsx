@@ -76,22 +76,35 @@ function canAccessUrl(
     if (!fm) return false;
     if (fm.public === true) return true;
 
-    const rule = fm.access;
+    const rule = fm.access ?? { mode: "public" as const };
 
-    if (rule.mode === "client") {
-        if (!ctx.authed) return false;
-        // 1) Si des clients explicites sont fournis dans le front-matter, on les utilise
-        const wanted =
-            rule.clients && rule.clients.length > 0
+    switch (rule.mode) {
+        case "public":
+            return true;
+
+        case "auth":
+            return ctx.authed;
+
+        case "admin":
+            return ctx.admin;
+
+        case "client": {
+            if (!ctx.authed) return false;
+
+            // If front-matter lists explicit clients, use them; otherwise derive from the URL
+            const derived = extractClientSlugFromUrl(url);
+            const wanted = rule.clients?.length
                 ? rule.clients
-                : (() => {
-                      // 2) Sinon on dérive du chemin (/wiki/clients/<slug>/…)
-                      const slug = extractClientSlugFromUrl(url);
-                      return slug ? [slug] : [];
-                  })();
+                : derived
+                ? [derived]
+                : [];
 
-        if (wanted.length === 0) return false;
-        return wanted.some((s) => ctx.userSlugClients.includes(s));
+            if (wanted.length === 0) return false;
+            return wanted.some((s) => ctx.userSlugClients.includes(s));
+        }
+
+        default:
+            return true;
     }
 
     return true;

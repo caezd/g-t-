@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createClient } from "@/lib/supabase/client";
@@ -32,31 +32,67 @@ import {
     SelectItem,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { is } from "date-fns/locale";
+import { toHoursDecimal } from "@/utils/date";
 
 const HF_CODE = "HORS_FORFAIT";
 
-type MandateType = { id: number; code?: string | null; description: string };
-type Pivot = {
+// --- Helpers pour quota_max ---
+function decimalToHhMm(dec: number | null | undefined): string {
+    if (dec == null || !Number.isFinite(dec)) return "";
+    const total = Math.round(dec * 60);
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}h${m.toString().padStart(2, "0")}`;
+}
+
+function canonicalizeQuotaInput(raw: string): string {
+    const s = (raw ?? "").trim();
+    if (s === "") return "";
+    const dec = toHoursDecimal(s);
+    if (!Number.isFinite(dec)) return s; // on laisse Zod gérer l'erreur via refine
+    return decimalToHhMm(dec);
+}
+
+function nearlyEqual(a: number, b: number, eps = 1e-6) {
+    return Math.abs(a - b) < eps;
+}
+
+// --- Types ---
+export type MandateType = {
+    id: number;
+    code?: string | null;
+    description: string;
+};
+export type Pivot = {
     id: number;
     mandat_type_id: number;
     billing_type: "hourly" | "monthly";
     amount: number | null;
+    // En DB: quota_max est stocké en décimal (heures). On le manipule en string côté formulaire.
     quota_max: number | null;
     deleted_at: string | null;
 };
 
+// --- Zod ---
 const RowSchema = z.object({
-    id: z.number().optional(), // id de la ligne pivot si existante
+    id: z.number().optional(),
     mandat_type_id: z.number(),
     billing_type: z.enum(["hourly", "monthly"]),
     amount: z.number().nonnegative(),
-    quota_max: z.number().int().nonnegative(),
-    _delete: z.boolean().optional(), // flag UI pour soft delete
+    // On saisit une string (1h30, 1:30, 90m, 1.5, etc.)
+    quota_max: z
+        .string()
+        .trim()
+        .refine((v) => v === "" || !Number.isNaN(toHoursDecimal(v)), {
+            message: "Format invalide (ex.: 1h30, 1:30, 90m, 1.5)",
+        }),
+    _delete: z.boolean().optional(),
 });
 
 const FormSchema = z.object({
-    name: z.string().min(2).max(50),
+    name: z.string().min(2).max(100),
     mandates: z.array(RowSchema).refine(
         (arr) => {
             const active = arr.filter((m) => !m._delete);
@@ -68,7 +104,8 @@ const FormSchema = z.object({
         { message: "Doublons de mandats actifs non permis." }
     ),
 });
-type FormValues = z.infer<typeof FormSchema>;
+
+export type FormValues = z.infer<typeof FormSchema>;
 
 export function EditClientDialog({
     clientId,
@@ -82,11 +119,12 @@ export function EditClientDialog({
     const supabase = createClient();
     const [open, setOpen] = useState(false);
     const [types, setTypes] = useState<MandateType[]>([]);
-    const [initial, setInitial] = useState<Pivot[]>([]); // snapshot DB complet (actifs + soft-deleted)
+    const [initial, setInitial] = useState<Pivot[]>([]);
 
     const form = useForm<FormValues>({
         resolver: zodResolver(FormSchema),
         defaultValues: { name: initialName, mandates: [] },
+        mode: "onBlur",
     });
 
     const { fields, append, remove, replace, update } = useFieldArray({
@@ -95,7 +133,7 @@ export function EditClientDialog({
         keyName: "_key",
     });
 
-    // Charge types + mandats du client (une seule fois à l'ouverture)
+    // Load types + client mandates at open
     useEffect(() => {
         if (!open) return;
         (async () => {
@@ -110,39 +148,46 @@ export function EditClientDialog({
                     .eq("client_id", clientId),
             ]);
             setTypes(t ?? []);
+
             const all = (pivots ?? []) as Pivot[];
             setInitial(all);
             const active = all.filter((p) => p.deleted_at == null);
-            const mapped = active.map((p) => ({
-                id: p.id,
-                mandat_type_id: p.mandat_type_id,
-                billing_type: p.billing_type,
-                amount: p.amount ?? 0,
-                quota_max: p.quota_max ?? 0,
-                _delete: false,
-            }));
+
+            const mapped = active.map((p) => {
+                // quota_max en DB: décimal heures → forme canonique "HhMM" ou "Mm"
+                const q = p.quota_max;
+                const qDec = typeof q === "number" ? q : Number.NaN;
+                return {
+                    id: p.id,
+                    mandat_type_id: p.mandat_type_id,
+                    billing_type: p.billing_type,
+                    amount: p.amount ?? 0,
+                    quota_max: decimalToHhMm(qDec),
+                    _delete: false,
+                } as const;
+            });
+
             replace(mapped);
             form.reset({ name: initialName, mandates: mapped });
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, clientId]);
 
-    // Types restant disponibles (pas déjà actifs)
+    // types restants disponibles (pas déjà actifs)
     const selectedActiveIds = form
         .getValues("mandates")
         .filter((m) => !m._delete)
         .map((m) => m.mandat_type_id);
-    const addableTypes = (types ?? [])
+    const available = (types ?? [])
         .filter((mt) => mt.code !== HF_CODE)
         .filter((mt) => !selectedActiveIds.includes(mt.id));
-    const available = addableTypes;
 
     const addMandate = (mandat_type_id: number) => {
         append({
             mandat_type_id,
             billing_type: "hourly",
             amount: 0,
-            quota_max: 0,
+            quota_max: "", // saisie requise
             _delete: false,
         });
     };
@@ -153,16 +198,16 @@ export function EditClientDialog({
     };
 
     async function onSubmit(values: FormValues) {
-        // 1) Update nom client si changé
+        // 1) Update client name if changed
         if (values.name !== initialName) {
             const { error } = await supabase
                 .from("clients")
                 .update({ name: values.name })
                 .eq("id", clientId);
-            if (error) return; // TODO: toast
+            if (error) return; // TODO: toast error
         }
 
-        // 2) Calcul du diff simple
+        // 2) Build diffs
         const initialById = new Map(initial.map((p) => [p.id, p]));
         const initialByType = new Map(
             initial.map((p) => [p.mandat_type_id, p])
@@ -183,24 +228,34 @@ export function EditClientDialog({
                 continue;
             }
 
+            // Parse actuel en décimal
+            const currDec = toHoursDecimal(m.quota_max);
+
             if (init?.id && init.deleted_at == null) {
-                // Update si champs modifiés
+                const initDec = Number(init.quota_max ?? 0);
+                const quotaChanged = !(
+                    Number.isFinite(initDec) &&
+                    Number.isFinite(currDec) &&
+                    nearlyEqual(initDec, currDec)
+                );
+
                 if (
                     init.billing_type !== m.billing_type ||
                     (init.amount ?? 0) !== m.amount ||
-                    (init.quota_max ?? 0) !== m.quota_max
+                    quotaChanged
                 ) {
                     toUpdate.push({
                         id: init.id,
                         patch: {
                             billing_type: m.billing_type,
                             amount: m.amount,
-                            quota_max: m.quota_max,
+                            quota_max: Number.isFinite(currDec)
+                                ? currDec
+                                : null,
                         },
                     });
                 }
             } else {
-                // Réactivation d'un ancien soft-deleted ?
                 const old = initialByType.get(m.mandat_type_id);
                 if (old && old.deleted_at != null) {
                     toReactivate.push({
@@ -209,22 +264,26 @@ export function EditClientDialog({
                             deleted_at: null,
                             billing_type: m.billing_type,
                             amount: m.amount,
-                            quota_max: m.quota_max,
+                            quota_max: Number.isFinite(currDec)
+                                ? currDec
+                                : null,
                         },
                     });
                 } else {
                     toInsert.push({
-                        client_id: clientId,
+                        client_id: clientId as unknown as number, // assuré par contexte
                         mandat_type_id: m.mandat_type_id,
                         billing_type: m.billing_type,
                         amount: m.amount,
-                        quota_max: m.quota_max,
-                    });
+                        quota_max: Number.isFinite(currDec) ? currDec : null,
+                        deleted_at: null,
+                        id: 0 as unknown as number, // sera ignoré par insert
+                    } as unknown as Omit<Pivot, "id" | "deleted_at">);
                 }
             }
         }
 
-        // 3) Appliquer le diff (ordonné, simple)
+        // 3) Apply diffs
         if (toSoftDelete.length) {
             const { error } = await supabase
                 .from("clients_mandats")
@@ -242,9 +301,11 @@ export function EditClientDialog({
         }
 
         if (toInsert.length) {
+            // Nettoyage des champs incompatibles
+            const payload = toInsert.map(({ id, deleted_at, ...rest }) => rest);
             const { error } = await supabase
                 .from("clients_mandats")
-                .insert(toInsert);
+                .insert(payload);
             if (error) return;
         }
 
@@ -355,7 +416,6 @@ export function EditClientDialog({
                                         >
                                             <div className="md:col-span-4 -mb-1 text-sm font-semibold">
                                                 {mt?.description ?? "Mandat"}
-
                                                 {flagged && (
                                                     <span className="ml-2 text-xs text-red-600">
                                                         (à supprimer)
@@ -423,9 +483,9 @@ export function EditClientDialog({
                                                                 step="0.01"
                                                                 value={
                                                                     Number.isFinite(
-                                                                        field.value
+                                                                        field.value as unknown as number
                                                                     )
-                                                                        ? field.value
+                                                                        ? (field.value as unknown as number)
                                                                         : 0
                                                                 }
                                                                 onChange={(
@@ -450,43 +510,43 @@ export function EditClientDialog({
                                                 )}
                                             />
 
-                                            <FormField
-                                                control={form.control}
+                                            {/* Quota max (string UI, décimal stocké) */}
+                                            <Controller
                                                 name={`mandates.${i}.quota_max`}
+                                                control={form.control}
                                                 render={({ field }) => (
                                                     <FormItem>
                                                         <FormLabel>
-                                                            Quota max (h)
+                                                            Quota max
                                                         </FormLabel>
                                                         <FormControl>
                                                             <Input
-                                                                type="number"
-                                                                inputMode="numeric"
-                                                                step="1"
-                                                                value={
-                                                                    Number.isFinite(
-                                                                        field.value
-                                                                    )
-                                                                        ? field.value
-                                                                        : 0
-                                                                }
-                                                                onChange={(
-                                                                    e
-                                                                ) => {
-                                                                    const v =
-                                                                        e
-                                                                            .currentTarget
-                                                                            .valueAsNumber;
+                                                                {...field}
+                                                                type="text"
+                                                                inputMode="decimal"
+                                                                placeholder="ex.: 1h30 ou 90m"
+                                                                onChange={(e) =>
                                                                     field.onChange(
-                                                                        Number.isFinite(
-                                                                            v
+                                                                        e.target
+                                                                            .value
+                                                                    )
+                                                                }
+                                                                onBlur={(e) =>
+                                                                    field.onChange(
+                                                                        canonicalizeQuotaInput(
+                                                                            e
+                                                                                .target
+                                                                                .value
                                                                         )
-                                                                            ? v
-                                                                            : 0
-                                                                    );
-                                                                }}
+                                                                    )
+                                                                }
                                                             />
                                                         </FormControl>
+                                                        <FormDescription>
+                                                            Formats acceptés:
+                                                            1h30 · 1:30 · 90m ·
+                                                            1.5
+                                                        </FormDescription>
                                                         <FormMessage />
                                                     </FormItem>
                                                 )}

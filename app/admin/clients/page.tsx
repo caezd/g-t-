@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
 import {
     Dialog,
@@ -47,20 +47,60 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray } from "react-hook-form";
 import { EditClientDialog } from "@/components/admin/clients/EditClientDialog";
+import { SearchFull } from "@/components/search-full";
 
 import Link from "next/link";
+import { cn } from "@/lib/cn";
+import { toHoursDecimal, formatHoursHuman } from "@/utils/date";
 
+// ------------------------
+// Helpers quota_max
+// ------------------------
+function decimalToHhMm(dec: number | null | undefined): string {
+    if (dec == null || !Number.isFinite(dec)) return "";
+    const total = Math.round(dec * 60);
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}h${m.toString().padStart(2, "0")}`;
+}
+
+function canonicalizeQuotaInput(raw: string): string {
+    const s = (raw ?? "").trim();
+    if (s === "") return "";
+    const dec = toHoursDecimal(s);
+    if (!Number.isFinite(dec)) return raw; // laisse l'erreur au validateur
+    return decimalToHhMm(dec);
+}
+// Normalise: minuscules + supprime accents + trim
+const norm = (s: unknown) =>
+    String(s ?? "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // retire diacritiques
+        .trim();
+
+// ------------------------
+// Zod schemas
+// ------------------------
 const MandateSelectionSchema = z.object({
-    id: z.number().optional(), // id pivot si existant
+    id: z.number().optional(), // id pivot si existant (ici, création donc généralement absent)
     mandat_type_id: z.number(),
     billing_type: z.enum(["hourly", "monthly"]),
     amount: z.number().nonnegative(),
-    quota_max: z.number().int().nonnegative(),
-    _toDelete: z.boolean().optional(), // flag UI pour soft delete
+    // Saisie utilisateur en string (1h30, 1:30, 90m, 1.5)
+    quota_max: z
+        .string()
+        .trim()
+        .refine(
+            (v) => v === "" || !Number.isNaN(toHoursDecimal(v)),
+            "Format invalide (ex.: 1h30, 1:30, 90m, 1.5)"
+        ),
 });
 
 const newClientSchema = z.object({
-    name: z.string().min(2).max(50),
+    name: z.string().min(2).max(100),
     mandates: z
         .array(MandateSelectionSchema)
         .nonempty("Sélectionne au moins un mandat.")
@@ -71,7 +111,11 @@ const newClientSchema = z.object({
         ),
 });
 
-const NewClientDialog = ({ onCreated }) => {
+const NewClientDialog = ({
+    onCreated,
+}: {
+    onCreated?: (client: any) => void;
+}) => {
     const supabase = createClient();
     const [isOpen, setIsOpen] = useState(false);
     const [mandateTypes, setMandateTypes] = useState<
@@ -80,7 +124,7 @@ const NewClientDialog = ({ onCreated }) => {
 
     const form = useForm<z.infer<typeof newClientSchema>>({
         resolver: zodResolver(newClientSchema),
-        defaultValues: { name: "", mandates: [] }, // ✅ contrôlé
+        defaultValues: { name: "", mandates: [] },
         mode: "onSubmit",
     });
 
@@ -114,7 +158,7 @@ const NewClientDialog = ({ onCreated }) => {
                 mandat_type_id: id,
                 billing_type: "hourly",
                 amount: 0,
-                quota_max: 0,
+                quota_max: "", // ✅ saisie string, normalisée au blur
             });
         } else if (!checked && idx !== -1) {
             remove(idx);
@@ -134,13 +178,16 @@ const NewClientDialog = ({ onCreated }) => {
         }
 
         // 2) Insérer les liaisons enrichies (table pivot)
-        const rows = values.mandates.map((m) => ({
-            client_id: client.id,
-            mandat_type_id: m.mandat_type_id,
-            billing_type: m.billing_type, // enum supabase
-            amount: m.amount,
-            quota_max: m.quota_max,
-        }));
+        const rows = values.mandates.map((m) => {
+            const qDec = toHoursDecimal(m.quota_max);
+            return {
+                client_id: client.id,
+                mandat_type_id: m.mandat_type_id,
+                billing_type: m.billing_type,
+                amount: m.amount,
+                quota_max: Number.isFinite(qDec) ? qDec : null, // ✅ en décimal d'heures
+            };
+        });
 
         const { error: linkErr } = await supabase
             .from("clients_mandats")
@@ -304,18 +351,26 @@ const NewClientDialog = ({ onCreated }) => {
                                                                 step="0.01"
                                                                 value={
                                                                     Number.isFinite(
-                                                                        field.value
+                                                                        field.value as any
                                                                     )
-                                                                        ? field.value
+                                                                        ? (field.value as any)
                                                                         : 0
                                                                 }
-                                                                onChange={(e) =>
-                                                                    field.onChange(
+                                                                onChange={(
+                                                                    e
+                                                                ) => {
+                                                                    const v =
                                                                         e
                                                                             .currentTarget
-                                                                            .valueAsNumber
-                                                                    )
-                                                                }
+                                                                            .valueAsNumber;
+                                                                    field.onChange(
+                                                                        Number.isFinite(
+                                                                            v
+                                                                        )
+                                                                            ? v
+                                                                            : 0
+                                                                    );
+                                                                }}
                                                             />
                                                         </FormControl>
                                                         <FormDescription>
@@ -326,36 +381,42 @@ const NewClientDialog = ({ onCreated }) => {
                                                 )}
                                             />
 
-                                            {/* Quota max (heures) */}
+                                            {/* Quota max (UI string → décimal DB) */}
                                             <FormField
                                                 control={form.control}
                                                 name={`mandates.${i}.quota_max`}
                                                 render={({ field }) => (
                                                     <FormItem>
                                                         <FormLabel>
-                                                            Quota max (h)
+                                                            Quota max
                                                         </FormLabel>
                                                         <FormControl>
                                                             <Input
-                                                                type="number"
-                                                                inputMode="numeric"
-                                                                step="1"
-                                                                value={
-                                                                    Number.isFinite(
-                                                                        field.value
-                                                                    )
-                                                                        ? field.value
-                                                                        : 0
-                                                                }
+                                                                {...field}
+                                                                type="text"
+                                                                inputMode="decimal"
+                                                                placeholder="ex.: 1h30 ou 90m"
                                                                 onChange={(e) =>
                                                                     field.onChange(
-                                                                        e
-                                                                            .currentTarget
-                                                                            .valueAsNumber
+                                                                        e.target
+                                                                            .value
+                                                                    )
+                                                                }
+                                                                onBlur={(e) =>
+                                                                    field.onChange(
+                                                                        canonicalizeQuotaInput(
+                                                                            e
+                                                                                .target
+                                                                                .value
+                                                                        )
                                                                     )
                                                                 }
                                                             />
                                                         </FormControl>
+                                                        <FormDescription>
+                                                            Formats: 1h30 · 1:30
+                                                            · 90m · 1.5
+                                                        </FormDescription>
                                                         <FormMessage />
                                                     </FormItem>
                                                 )}
@@ -414,26 +475,53 @@ async function softDeleteClient(
 const ClientPage = () => {
     const supabase = createClient();
     const [clients, setClients] = useState([]);
+    const [q, setQ] = useState("");
+
     useEffect(() => {
         const fetchClients = async () => {
             const { data, error } = await supabase
                 .from("clients")
-                .select("*, clients_mandats(count)")
-                .is("deleted_at", null);
+                .select(
+                    `*, 
+                mandats_count:clients_mandats(count),
+                mandats:clients_mandats(*,
+                    mandat_types(code)
+                )`
+                )
+                .is("mandats_count.deleted_at", null)
+                .is("mandats.deleted_at", null);
             if (error) {
                 console.error("Error fetching clients:", error);
             } else {
-                setClients(data);
+                const normalized = data.map((c: any) => ({
+                    ...c,
+                    mandatsCount: c.mandats_count?.[0]?.count ?? 0,
+                }));
+
+                setClients(normalized);
+                console.log("Fetched clients:", normalized);
             }
         };
         fetchClients();
     }, [supabase]);
 
+    const filtered = useMemo(() => {
+        const query = norm(q);
+        if (!query) return clients;
+
+        return clients.filter((c: any) => {
+            // Concatène les champs pertinents pour la recherche
+            const name = c.name ?? "";
+            const hay = norm([name].join(" "));
+            return hay.includes(query);
+        });
+    }, [q, clients]);
+
     return (
         <>
-            <div className="p-8">
-                <div className="max-w-7xl mx-auto">
-                    <div className="md:flex md:items-center md:justify-between">
+            <div className="flex flex-col flex-1">
+                <div className="flex flex-col flex-1">
+                    <div className="md:flex md:items-center md:justify-between border-b px-4 py-6 sm:px-6 lg:px-8">
                         <div className="flex-1 min-w-0">
                             <h1 className="sm:truncate sm:text-3xl dark:text-zinc-50 text-zinc-950 font-semibold">
                                 Gestion des clients
@@ -447,141 +535,213 @@ const ClientPage = () => {
                             />
                         </div>
                     </div>
-                    <section className="mt-8 py-2 sm:py-6 lg:py-8">
-                        <table className="min-w-full relative divide-y divide-zinc-200 dark:divide-zinc-800">
-                            <thead>
-                                <tr>
-                                    {/* Table headers */}
-                                    {[
-                                        "Nom",
-                                        "Nb. de mandats",
-                                        "Client créé le",
-                                    ].map((header, i) => (
-                                        <th
-                                            scope="col"
-                                            key={i}
-                                            className="w-min py-3.5 pr-3 pl-4 text-left text-sm font-semibold sm:pl-0"
-                                        >
-                                            {header}
-                                        </th>
-                                    ))}
-                                    <th
-                                        scope="col"
-                                        className="py-3.5 pr-3 pl-4 text-left text-sm font-semibold sm:pr-0"
-                                    >
-                                        <span className="sr-only">Edit</span>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {clients &&
-                                    clients
-                                        .sort((a, b) =>
-                                            a.name.localeCompare(b.name)
-                                        )
-                                        .map((client) => (
-                                            <tr key={client.id}>
-                                                <td className="py-4 pr-3 pl-4 text-sm sm:pl-0 ">
-                                                    <Link
-                                                        href={`/admin/clients/${client.id}`}
-                                                    >
-                                                        {client.name}
-                                                    </Link>
-                                                </td>
-                                                <td className="py-4 pr-3 pl-4 text-sm sm:pl-0 ">
-                                                    {
-                                                        client.clients_mandats
-                                                            .count
-                                                    }
-                                                </td>
-                                                <td className="py-4 pr-3 pl-4 text-sm sm:pl-0">
-                                                    {new Date(
-                                                        client.created_at
-                                                    ).toLocaleDateString()}
-                                                </td>
-                                                <td>
-                                                    <EditClientDialog
-                                                        clientId={client.id}
-                                                        initialName={
-                                                            client.name
-                                                        }
-                                                        onUpdated={(patch) =>
-                                                            setClients((prev) =>
-                                                                prev.map((x) =>
-                                                                    x.id ===
-                                                                    client.id
-                                                                        ? {
-                                                                              ...x,
-                                                                              ...patch,
-                                                                          }
-                                                                        : x
-                                                                )
-                                                            )
-                                                        }
-                                                    />
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger
-                                                            asChild
-                                                        >
-                                                            <Button
-                                                                variant="destructive"
-                                                                size="sm"
-                                                            >
-                                                                Supprimer
-                                                            </Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>
-                                                                    Supprimer ce
-                                                                    client ?
-                                                                </AlertDialogTitle>
-                                                                <AlertDialogDescription>
-                                                                    Le client
-                                                                    sera masqué.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>
-                                                                    Annuler
-                                                                </AlertDialogCancel>
-                                                                <AlertDialogAction
-                                                                    onClick={async () => {
-                                                                        try {
-                                                                            await softDeleteClient(
-                                                                                supabase,
-                                                                                client.id
-                                                                            );
-                                                                            // retire de la liste locale
-                                                                            setClients(
-                                                                                (
-                                                                                    prev
-                                                                                ) =>
-                                                                                    prev.filter(
-                                                                                        (
-                                                                                            c
-                                                                                        ) =>
-                                                                                            c.id !==
-                                                                                            client.id
-                                                                                    )
-                                                                            );
-                                                                        } catch (e) {
-                                                                            console.error(
-                                                                                e
-                                                                            );
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    Confirmer
-                                                                </AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
+
+                    <section className="flex flex-col flex-1 overflow-hidden">
+                        <SearchFull
+                            query={q}
+                            setQuery={setQ}
+                            placeholder="Rechercher un client..."
+                        />
+                        <div className="w-full overflow-hidden flex-1 flex flex-col gap-4 -mt-px">
+                            <section className="flex-1 border overflow-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10 sticky top-0 h-4">
+                                            {/* Table headers */}
+                                            {[
+                                                "Nom",
+                                                "Nb. de mandats actifs",
+                                                "Total des heures par semaine",
+                                                "Client créé le",
+                                            ].map((header, i) => (
+                                                <th
+                                                    scope="col"
+                                                    key={i}
+                                                    className="px-3 py-2 whitespace-nowrap w-max"
+                                                >
+                                                    {header}
+                                                </th>
+                                            ))}
+                                            <th
+                                                scope="col"
+                                                className="px-3 py-2 whitespace-nowrap w-max"
+                                            >
+                                                <span className="sr-only">
+                                                    Edit
+                                                </span>
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filtered.length === 0 && (
+                                            <tr>
+                                                <td
+                                                    colSpan={5}
+                                                    className="py-6 px-4 text-sm text-muted-foreground"
+                                                >
+                                                    Aucun résultat pour « {q} ».
                                                 </td>
                                             </tr>
-                                        ))}
-                            </tbody>
-                        </table>
+                                        )}
+                                        {filtered &&
+                                            filtered
+                                                .sort((a: any, b: any) =>
+                                                    a.name.localeCompare(b.name)
+                                                )
+                                                .map((client: any) => (
+                                                    <tr
+                                                        key={client.id}
+                                                        className="border-b text-sm last:border-b-0"
+                                                    >
+                                                        <td className="p-4 font-medium">
+                                                            <Link
+                                                                href={`/admin/clients/${client.id}`}
+                                                                className={cn(
+                                                                    client.deleted_at
+                                                                        ? "text-muted italic line-through"
+                                                                        : "underline"
+                                                                )}
+                                                            >
+                                                                {client.name}
+                                                                {client.deleted_at && (
+                                                                    <>
+                                                                        {" "}
+                                                                        (archivé)
+                                                                    </>
+                                                                )}
+                                                                <span className="sr-only">
+                                                                    , voir les
+                                                                    détails
+                                                                </span>
+                                                            </Link>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            {
+                                                                client.mandatsCount
+                                                            }
+                                                        </td>
+                                                        <td className="p-4">
+                                                            {client.mandats &&
+                                                                formatHoursHuman(
+                                                                    client.mandats.reduce(
+                                                                        (
+                                                                            acc: number,
+                                                                            mandat: any
+                                                                        ) => {
+                                                                            return (
+                                                                                acc +
+                                                                                (mandat.quota_max ||
+                                                                                    0)
+                                                                            );
+                                                                        },
+                                                                        0
+                                                                    )
+                                                                )}
+                                                        </td>
+                                                        <td className="p-4">
+                                                            {new Date(
+                                                                client.created_at
+                                                            ).toLocaleDateString()}
+                                                        </td>
+                                                        <td className="p-4 flex gap-2 items-center">
+                                                            <EditClientDialog
+                                                                clientId={
+                                                                    client.id
+                                                                }
+                                                                initialName={
+                                                                    client.name
+                                                                }
+                                                                onUpdated={(
+                                                                    patch
+                                                                ) =>
+                                                                    setClients(
+                                                                        (
+                                                                            prev
+                                                                        ) =>
+                                                                            prev.map(
+                                                                                (
+                                                                                    x: any
+                                                                                ) =>
+                                                                                    x.id ===
+                                                                                    client.id
+                                                                                        ? {
+                                                                                              ...x,
+                                                                                              ...patch,
+                                                                                          }
+                                                                                        : x
+                                                                            )
+                                                                    )
+                                                                }
+                                                            />
+                                                            <AlertDialog>
+                                                                <AlertDialogTrigger
+                                                                    asChild
+                                                                >
+                                                                    <Button
+                                                                        variant="destructive"
+                                                                        size="sm"
+                                                                    >
+                                                                        Supprimer
+                                                                    </Button>
+                                                                </AlertDialogTrigger>
+                                                                <AlertDialogContent>
+                                                                    <AlertDialogHeader>
+                                                                        <AlertDialogTitle>
+                                                                            Supprimer
+                                                                            ce
+                                                                            client
+                                                                            ?
+                                                                        </AlertDialogTitle>
+                                                                        <AlertDialogDescription>
+                                                                            Le
+                                                                            client
+                                                                            sera
+                                                                            masqué.
+                                                                        </AlertDialogDescription>
+                                                                    </AlertDialogHeader>
+                                                                    <AlertDialogFooter>
+                                                                        <AlertDialogCancel>
+                                                                            Annuler
+                                                                        </AlertDialogCancel>
+                                                                        <AlertDialogAction
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    await softDeleteClient(
+                                                                                        supabase,
+                                                                                        client.id
+                                                                                    );
+                                                                                    // retire de la liste locale
+                                                                                    setClients(
+                                                                                        (
+                                                                                            prev
+                                                                                        ) =>
+                                                                                            prev.filter(
+                                                                                                (
+                                                                                                    c: any
+                                                                                                ) =>
+                                                                                                    c.id !==
+                                                                                                    client.id
+                                                                                            )
+                                                                                    );
+                                                                                } catch (e) {
+                                                                                    console.error(
+                                                                                        e
+                                                                                    );
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            Confirmer
+                                                                        </AlertDialogAction>
+                                                                    </AlertDialogFooter>
+                                                                </AlertDialogContent>
+                                                            </AlertDialog>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                    </tbody>
+                                </table>
+                            </section>
+                        </div>
                     </section>
                 </div>
             </div>

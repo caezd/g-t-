@@ -26,8 +26,8 @@ export default async function AdminEmployeesPage() {
     }
 
     return (
-        <div className="flex flex-col flex-1">
-            <div className="flex flex-col">
+        <div className="flex flex-col flex-1 w-full overflow-hidden">
+            <div className="flex flex-col flex-1">
                 <div className="md:flex md:items-center md:justify-between border-b px-4 py-6 sm:px-6 lg:px-8">
                     <div className="flex-1 min-w-0">
                         <h1 className="sm:truncate sm:text-3xl dark:text-zinc-50 text-zinc-950 font-semibold">
@@ -44,12 +44,10 @@ export default async function AdminEmployeesPage() {
                     </div>
                 </div>
 
-                <section className="flex flex-col flex-1">
-                    <EmployeesTable
-                        initialData={profiles ?? []}
-                        settings={settings}
-                    />
-                </section>
+                <EmployeesTable
+                    initialData={profiles ?? []}
+                    settings={settings}
+                />
             </div>
         </div>
     );

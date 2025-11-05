@@ -2,19 +2,10 @@
 
 import { useMemo, useState, useReducer } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
     ShieldUser,
     UsersRound,
     Moon,
-    Filter,
     ArrowUpDown,
     ArrowUp,
     ArrowDown,
@@ -60,7 +51,7 @@ const COLUMNS: {
     { label: "Taux horaire", sortKey: "rate" },
     {
         label: "Taux horaire réel",
-        hint: "Taux × (1 + charge)",
+        hint: "Taux × Charge sociale",
         sortKey: "realHourlyRate",
     },
     {
@@ -228,7 +219,10 @@ function HeaderCell({
     if (!col.sortKey) {
         return (
             <th
-                className={cn("px-3 py-2", col.className)}
+                className={cn(
+                    "px-3 py-2 whitespace-nowrap w-max flex",
+                    col.className
+                )}
                 aria-sort={ariaSort as any}
             >
                 <div className="inline-flex items-center gap-2">
@@ -241,7 +235,7 @@ function HeaderCell({
     return (
         <th
             className={cn(
-                "px-2 py-1 cursor-pointer select-none",
+                "px-2 py-1 cursor-pointer select-none whitespace-nowrap w-max align-middle",
                 col.className
             )}
             aria-sort={ariaSort as any}
@@ -252,12 +246,12 @@ function HeaderCell({
                 if (e.key === "Enter" || e.key === " ") onSort?.();
             }}
         >
+            {/* Hint en frère (pas dans un bouton) */}
             <div className="inline-flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                {col.hint && <Hint content={col.hint} />}
                 <span className="whitespace-nowrap">{col.label}</span>
                 <SortIcon active={active} dir={dir} />
             </div>
-            {/* Hint en frère (pas dans un bouton) */}
-            {col.hint && <Hint content={col.hint} />}
         </th>
     );
 }
@@ -563,7 +557,7 @@ export default function EmployeesTable({
     /* -------------------------------- Render -------------------------------- */
 
     return (
-        <div>
+        <div className="flex flex-col flex-1 overflow-hidden">
             {/* Recherche */}
             <SearchFull
                 query={q}
@@ -572,102 +566,16 @@ export default function EmployeesTable({
             />
 
             {/* Filtres & actions */}
-            <div className="px-4 pt-4 flex flex-wrap items-center gap-2">
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline" type="button">
-                            <Filter className="h-4 w-4 mr-2" />
-                            Filtres
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-64">
-                        <div className="px-2 py-2 text-xs text-muted-foreground">
-                            Groupes
-                        </div>
-                        <DropdownMenuCheckboxItem
-                            checked={showAdmins}
-                            onCheckedChange={(v) => setShowAdmins(!!v)}
-                        >
-                            Administrateurs
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                            checked={showUsers}
-                            onCheckedChange={(v) => setShowUsers(!!v)}
-                        >
-                            Employés
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                            checked={showInactive}
-                            onCheckedChange={(v) => setShowInactive(!!v)}
-                        >
-                            Inactifs
-                        </DropdownMenuCheckboxItem>
-
-                        <div className="px-2 pt-3 pb-1 text-xs text-muted-foreground">
-                            Bornes numériques
-                        </div>
-                        <div className="px-2 pb-2 grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                                <label className="text-xs">Taux min</label>
-                                <Input
-                                    inputMode="decimal"
-                                    placeholder="ex. 25"
-                                    value={minRate}
-                                    onChange={(e) => setMinRate(e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs">Taux max</label>
-                                <Input
-                                    inputMode="decimal"
-                                    placeholder="ex. 60"
-                                    value={maxRate}
-                                    onChange={(e) => setMaxRate(e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-1 col-span-2">
-                                <label className="text-xs">
-                                    Disponibilité min (h)
-                                </label>
-                                <Input
-                                    inputMode="decimal"
-                                    placeholder="ex. 10"
-                                    value={minAvail}
-                                    onChange={(e) =>
-                                        setMinAvail(e.target.value)
-                                    }
-                                />
-                            </div>
-                        </div>
-                        <div className="px-2 pb-2">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                type="button"
-                                onClick={clearFilters}
-                                className="w-full"
-                            >
-                                Réinitialiser
-                            </Button>
-                        </div>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-
-                <div className="text-xs text-muted-foreground">
-                    Tri : <span className="font-medium">{sort.key}</span> (
-                    {sort.dir})
-                </div>
-            </div>
 
             {/* Tableau */}
-            <div className="px-4 py-6">
+            <div className="w-full overflow-hidden flex-1 flex flex-col gap-4 -mt-px">
                 {nothing ? (
                     <div className="space-y-3">
                         <div className="py-4 text-sm text-muted-foreground">
                             Aucun employé ne correspond aux filtres/recherche.
                         </div>
                         {/* Panneau debug rapide */}
-                        <div className="text-xs rounded-lg border p-3 bg-zinc-50 dark:bg-zinc-900/30">
+                        {/* <div className="text-xs rounded-lg border p-3 bg-zinc-50 dark:bg-zinc-900/30">
                             <div className="font-medium mb-1">Debug</div>
                             <ul className="grid grid-cols-2 gap-y-1">
                                 <li>
@@ -691,10 +599,10 @@ export default function EmployeesTable({
                                 </li>
                                 <li>minAvail: {minAvail || "—"}</li>
                             </ul>
-                        </div>
+                        </div> */}
                     </div>
                 ) : (
-                    <section className="border rounded-lg overflow-hidden">
+                    <section className="flex-1 border rounded-lg overflow-auto">
                         <table className="w-full">
                             <thead>
                                 <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10">

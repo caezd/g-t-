@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Calendar as CalendarIcon, Lock, Unlock } from "lucide-react";
+import { Calendar as CalendarIcon, Lock, LockKeyholeOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     startOfWeekSunday,
@@ -21,6 +21,7 @@ import {
     ymdFromDate,
 } from "@/utils/date";
 import { Fragment } from "react";
+import TimeEntryEditorDialog from "@/components/forms/TimeEntryEditorDialog";
 
 type Client = { id: string | number; name?: string | null };
 
@@ -312,7 +313,8 @@ export default function ClientPanelAll({
                         onClick={() => setClosed(selectedIds, false)}
                         disabled={!selectedIds.length}
                     >
-                        <Unlock className="mr-2 h-4 w-4" /> Réouvrir sélection
+                        <LockKeyholeOpen className="mr-2 h-4 w-4" /> Réouvrir
+                        sélection
                     </Button>
                     <div className="ml-auto text-sm text-muted-foreground">
                         {loading ? "Chargement…" : `${entries.length} entrées`}
@@ -361,7 +363,8 @@ export default function ClientPanelAll({
                         variant="outline"
                         onClick={() => closeWeek(false)}
                     >
-                        <Unlock className="mr-2 h-4 w-4" /> Réouvrir semaine
+                        <LockKeyholeOpen className="mr-2 h-4 w-4" /> Réouvrir
+                        semaine
                     </Button>
 
                     <label className="flex items-center gap-2 text-sm ml-2">
@@ -445,15 +448,46 @@ export default function ClientPanelAll({
                                         <td className="p-2 text-center">
                                             {e.is_closed ? (
                                                 <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-muted">
-                                                    <Lock className="h-3 w-3" />{" "}
-                                                    Fermé
+                                                    <Lock size={16} /> Fermé
                                                 </span>
                                             ) : (
                                                 <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-                                                    <Unlock className="h-3 w-3" />{" "}
+                                                    <LockKeyholeOpen
+                                                        size={16}
+                                                    />
                                                     Ouvert
                                                 </span>
                                             )}
+                                        </td>
+                                        <td className="p-2">
+                                            <TimeEntryEditorDialog
+                                                entry={e}
+                                                isAdmin
+                                                onPatched={(u) =>
+                                                    setEntries((prev) =>
+                                                        prev.map((x) =>
+                                                            x.id === u.id
+                                                                ? u
+                                                                : x
+                                                        )
+                                                    )
+                                                }
+                                                onDeleted={(id) =>
+                                                    setEntries((prev) =>
+                                                        prev.filter(
+                                                            (x) => x.id !== id
+                                                        )
+                                                    )
+                                                }
+                                                trigger={
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                    >
+                                                        Éditer
+                                                    </Button>
+                                                }
+                                            />
                                         </td>
                                     </tr>
                                 </Fragment>

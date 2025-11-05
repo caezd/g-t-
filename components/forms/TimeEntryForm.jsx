@@ -49,6 +49,8 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 
+const NULL_SENTINEL = "__NULL__";
+
 function useClientMandates(supabase, clientId) {
     const [mandates, setMandates] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -88,8 +90,7 @@ function useClientMandates(supabase, clientId) {
 const formSchema = z.object({
     doc: z.date(),
     billed_amount: z
-        .string()
-        .min(1, "Le temps facturé est requis")
+        .string({ required_error: "Le temps facturé est obligatoire." })
         .refine(
             (v) => !Number.isNaN(toHoursDecimal(v)),
             "Format invalide (ex. 1h30, 1:30, 90m)"
@@ -136,7 +137,6 @@ export function ClientPickerRow({ form }) {
                 setClients([]);
                 return;
             }
-            console.log("Fetched team clients:", data);
 
             const unique = new Map();
             for (const row of data ?? []) {
@@ -304,10 +304,9 @@ function MandatePickerRow({ form }) {
             control={form.control}
             name="mandat_id"
             render={({ field }) => {
-                const disabled =
-                    loading ||
-                    (!internal && (!clientId || clientId === null)) ||
-                    mandates.length === 0;
+                const hasClient =
+                    internal || (clientId != null && clientId !== 0);
+                const disabled = loading || !hasClient;
 
                 return (
                     <FormItem className="flex flex-col col-span-1">
@@ -316,14 +315,18 @@ function MandatePickerRow({ form }) {
                             <Select
                                 disabled={disabled}
                                 value={
-                                    field.value != null
+                                    field.value === null
+                                        ? NULL_SENTINEL
+                                        : field.value != null
                                         ? String(field.value)
-                                        : ""
+                                        : undefined
                                 }
                                 onValueChange={(value) => {
                                     form.setValue(
                                         "mandat_id",
-                                        value === "" ? null : Number(value),
+                                        value === NULL_SENTINEL
+                                            ? null
+                                            : Number(value),
                                         {
                                             shouldDirty: true,
                                             shouldValidate: true,
@@ -340,7 +343,7 @@ function MandatePickerRow({ form }) {
                                                 ? internal
                                                     ? "Aucun mandat requis (Interne)"
                                                     : clientId
-                                                    ? "Aucun mandat pour ce client"
+                                                    ? "Aucun mandat — choisir « Hors mandat »"
                                                     : "Choisir un client d’abord"
                                                 : "Sélectionner un mandat"
                                         }
@@ -356,6 +359,9 @@ function MandatePickerRow({ form }) {
                                                 `Mandat #${m.id}`}
                                         </SelectItem>
                                     ))}
+                                    <SelectItem value={NULL_SENTINEL}>
+                                        Hors mandat
+                                    </SelectItem>
                                 </SelectContent>
                             </Select>
                         </FormControl>

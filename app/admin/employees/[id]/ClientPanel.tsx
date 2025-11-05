@@ -10,8 +10,9 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar as CalendarIcon, Lock, Unlock } from "lucide-react";
+
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
     startOfWeekSunday,
     endOfWeekSaturday,
@@ -184,115 +185,106 @@ export default function ClientPanel({ employeeId }: { employeeId: string }) {
                     onCreated={(row) => setEntries((prev) => [row, ...prev])}
                 />
             </div>
+            <table className="w-full text-sm relative">
+                <thead className="bg-muted/50 sticky top-0">
+                    <tr>
+                        <th className="w-10 p-2"></th>
+                        <th className="text-left p-2">Date</th>
+                        <th className="text-left p-2">Client</th>
+                        <th className="text-left p-2">Mandat</th>
+                        <th className="text-left p-2">Service</th>
+                        <th className="text-left p-2">Détails</th>
+                        <th className="text-right p-2">Heures</th>
+                        <th className="text-center p-2">État</th>
+                        <th className="text-center p-2"></th>
+                    </tr>
+                </thead>
 
-            <div className="border rounded-md overflow-hidden">
-                <table className="w-full text-sm">
-                    <thead className="bg-muted/50">
-                        <tr>
-                            <th className="w-10 p-2"></th>
-                            <th className="text-left p-2">Date</th>
-                            <th className="text-left p-2">Client</th>
-                            <th className="text-left p-2">Mandat</th>
-                            <th className="text-left p-2">Service</th>
-                            <th className="text-left p-2">Détails</th>
-                            <th className="text-right p-2">Heures</th>
-                            <th className="text-center p-2">État</th>
-                            <th className="text-center p-2"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {entries.map((e) => {
-                            const d = new Date(e.doc);
-                            return (
-                                <tr key={e.id} className="border-t">
-                                    <td className="p-2 align-middle">
-                                        <Checkbox
-                                            checked={!!checked[e.id]}
-                                            onCheckedChange={(v) =>
-                                                setChecked((prev) => ({
-                                                    ...prev,
-                                                    [e.id]: !!v,
-                                                }))
-                                            }
-                                        />
-                                    </td>
-                                    <td className="p-2 whitespace-nowrap">
-                                        {d.toLocaleDateString("fr-CA")}
-                                    </td>
+                <tbody>
+                    {entries.map((e) => {
+                        const d = new Date(e.doc);
+                        return (
+                            <tr key={e.id} className="border-t">
+                                <td className="p-2 align-middle">
+                                    <Checkbox
+                                        checked={!!checked[e.id]}
+                                        onCheckedChange={(v) =>
+                                            setChecked((prev) => ({
+                                                ...prev,
+                                                [e.id]: !!v,
+                                            }))
+                                        }
+                                    />
+                                </td>
+                                <td className="p-2 whitespace-nowrap">
+                                    {d.toLocaleDateString("fr-CA")}
+                                </td>
 
-                                    <td className="p-2 whitespace-nowrap">
-                                        {e.client?.name ?? "—"}
-                                    </td>
-                                    <td className="p-2 whitespace-nowrap">
-                                        {e.mandat?.mandat_types?.description ??
-                                            "—"}
-                                    </td>
-                                    <td className="p-2 whitespace-nowrap">
-                                        {e.clients_services?.name ?? "—"}
-                                    </td>
-                                    <td className="p-2">{e.details ?? "—"}</td>
-                                    <td className="p-2 text-right">
-                                        {typeof e.billed_amount === "number"
-                                            ? e.billed_amount.toFixed(2)
-                                            : e.billed_amount}
-                                    </td>
-                                    <td className="p-2 text-center">
-                                        {e.is_closed ? (
-                                            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-muted">
-                                                <Lock className="h-3 w-3" />{" "}
-                                                Fermé
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-                                                <Unlock className="h-3 w-3" />{" "}
-                                                Ouvert
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="p-2 text-center">
-                                        <TimeEntryEditorDialog
-                                            entry={e}
-                                            isAdmin
-                                            onPatched={(u) =>
-                                                setEntries((prev) =>
-                                                    prev.map((x) =>
-                                                        x.id === u.id ? u : x
-                                                    )
+                                <td className="p-2 whitespace-nowrap">
+                                    {e.client?.name ?? "—"}
+                                </td>
+                                <td className="p-2 whitespace-nowrap">
+                                    {e.mandat?.mandat_types?.description ?? "—"}
+                                </td>
+                                <td className="p-2 whitespace-nowrap">
+                                    {e.clients_services?.name ?? "—"}
+                                </td>
+                                <td className="p-2">{e.details ?? "—"}</td>
+                                <td className="p-2 text-right">
+                                    {typeof e.billed_amount === "number"
+                                        ? e.billed_amount.toFixed(2)
+                                        : e.billed_amount}
+                                </td>
+                                <td className="p-2 text-center">
+                                    {e.is_closed ? (
+                                        <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs bg-muted">
+                                            <Lock className="h-3 w-3" /> Fermé
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+                                            <Unlock className="h-3 w-3" />{" "}
+                                            Ouvert
+                                        </span>
+                                    )}
+                                </td>
+                                <td className="p-2 text-center">
+                                    <TimeEntryEditorDialog
+                                        entry={e}
+                                        isAdmin
+                                        onPatched={(u) =>
+                                            setEntries((prev) =>
+                                                prev.map((x) =>
+                                                    x.id === u.id ? u : x
                                                 )
-                                            }
-                                            onDeleted={(id) =>
-                                                setEntries((prev) =>
-                                                    prev.filter(
-                                                        (x) => x.id !== id
-                                                    )
-                                                )
-                                            }
-                                            trigger={
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                >
-                                                    Éditer
-                                                </Button>
-                                            }
-                                        />
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                        {!entries.length && (
-                            <tr>
-                                <td
-                                    colSpan={7}
-                                    className="p-6 text-center text-muted-foreground"
-                                >
-                                    Aucune entrée sur cette semaine.
+                                            )
+                                        }
+                                        onDeleted={(id) =>
+                                            setEntries((prev) =>
+                                                prev.filter((x) => x.id !== id)
+                                            )
+                                        }
+                                        trigger={
+                                            <Button size="sm" variant="outline">
+                                                Éditer
+                                            </Button>
+                                        }
+                                    />
                                 </td>
                             </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                        );
+                    })}
+                    {!entries.length && (
+                        <tr>
+                            <td
+                                colSpan={7}
+                                className="p-6 text-center text-muted-foreground"
+                            >
+                                Aucune entrée sur cette semaine.
+                            </td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
         </>
     );
 }

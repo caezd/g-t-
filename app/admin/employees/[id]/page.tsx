@@ -4,6 +4,7 @@ import { isAdmin } from "@/utils/user";
 import ClientPanel from "./ClientPanel";
 
 export default async function Page({ params }: { params: Promise<any> }) {
+    const { id } = await params;
     const supabase = await createClient();
     const { data } = await supabase.auth.getClaims();
 
@@ -19,7 +20,7 @@ export default async function Page({ params }: { params: Promise<any> }) {
     const { data: employee } = await supabase
         .from("profiles")
         .select("id, full_name, email")
-        .eq("id", params.id)
+        .eq("id", id)
         .maybeSingle();
 
     return (
@@ -28,11 +29,13 @@ export default async function Page({ params }: { params: Promise<any> }) {
                 <div className="flex-1 min-w-0">
                     <h1 className="sm:truncate sm:text-3xl dark:text-zinc-50 text-zinc-950 font-semibold">
                         Feuille de temps –{" "}
-                        {employee?.full_name || employee?.email || params.id}
+                        {employee?.full_name || employee?.email || id}
                     </h1>
                 </div>
             </div>
-            <ClientPanel employeeId={params.id} />
+            <div className="flex flex-1 flex-col p-8">
+                <ClientPanel employeeId={id} />
+            </div>
         </div>
     );
 }

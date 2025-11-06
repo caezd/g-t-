@@ -127,8 +127,8 @@ export function UserWeeklyStats({
         // setup l'alerte si banque négative
         if (bankAvailable < 0) {
             setAlert(
-                `Vos heures facturables sont négatives de ${FormatDecimalsToHours(
-                    bankAvailable
+                `Vous avez excédé vos heures disponibles de ${FormatDecimalsToHours(
+                    Math.abs(bankAvailable)
                 )}. Pensez à aviser votre employeur !`
             );
         }
@@ -136,7 +136,7 @@ export function UserWeeklyStats({
         const now = new Date();
         if (now.getDay() === 5 && bankAvailable > 8) {
             setAlert(
-                "Vos heures facturables sont élevées pour un vendredi. N'oubliez pas de faire le point de votre semaine !"
+                "Vos heures disponibles sont élevées pour un vendredi. N'oubliez pas de faire le point de votre semaine !"
             );
         }
     }, [stats]);
@@ -190,8 +190,8 @@ export function UserWeeklyStats({
             unit: "hrs",
         },
         {
-            label: `Heures facturables`,
-            hint: "Total des heures facturables selon les heures travaillées chaque semaine.",
+            label: `Heures disponibles`,
+            hint: "Total des heures disponibles selon les heures travaillées chaque semaine.",
             amount: stats.bankAvailable,
             unit: "hrs",
             conditionalStyle: {

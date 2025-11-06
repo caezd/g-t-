@@ -156,9 +156,6 @@ const UpdateServiceDialog = ({ service, onUpdated }) => {
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>Modifier un service</DialogTitle>
-                    <DialogDescription>
-                        Modifier un service ou un département que vous gérez.
-                    </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -221,12 +218,12 @@ export default function AdminServicesPage() {
     }, [supabase]);
 
     return (
-        <div className="p-8">
-            <div className="max-w-7xl mx-auto">
-                <div className="md:flex md:items-center md:justify-between">
+        <div className="flex flex-col flex-1">
+            <div className="flex flex-col flex-1">
+                <div className="md:flex md:items-center md:justify-between border-b px-4 py-6 sm:px-6 lg:px-8">
                     <div className="flex-1 min-w-0">
                         <h1 className="sm:truncate sm:text-3xl dark:text-zinc-50 text-zinc-950 font-semibold">
-                            Gestion des services
+                            Gestion des clients
                         </h1>
                     </div>
                     <div className="flex mt-4 md:mt-0 md:ml-4">
@@ -237,61 +234,78 @@ export default function AdminServicesPage() {
                         />
                     </div>
                 </div>
-                <section className="mt-8 py-2 sm:py-6 lg:py-8">
-                    <table className="min-w-full relative divide-y divide-zinc-200 dark:divide-zinc-800">
-                        <thead>
-                            <tr>
-                                {/* Table headers */}
-                                {["ID", "Description"].map((header, i) => (
-                                    <th
-                                        scope="col"
-                                        key={i}
-                                        className="py-3.5 pr-3 pl-4 text-left text-sm font-semibold sm:pl-0"
-                                    >
-                                        {header}
-                                    </th>
-                                ))}
-                                <th
-                                    scope="col"
-                                    className=" py-3.5 pr-3 pl-4 text-left text-sm font-semibold sm:pr-0"
-                                >
-                                    <span className="sr-only">Edit</span>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {services &&
-                                services
-                                    .sort((a, b) =>
-                                        a.name.localeCompare(b.name)
-                                    )
-                                    .map((service) => (
-                                        <tr key={service.id}>
-                                            <td className="py-4 pr-3 pl-4 text-sm sm:pl-0">
-                                                {service.id}
-                                            </td>
-                                            <td className="py-4 pr-3 pl-4 text-sm sm:pl-0 w-full">
-                                                {service.name}
-                                            </td>
-                                            <td>
-                                                <UpdateServiceDialog
-                                                    service={service}
-                                                    onUpdated={(updated) =>
-                                                        setServices((prev) =>
-                                                            prev.map((s) =>
-                                                                s.id ===
-                                                                updated.id
-                                                                    ? updated
-                                                                    : s
-                                                            )
-                                                        )
-                                                    }
-                                                />
-                                            </td>
-                                        </tr>
-                                    ))}
-                        </tbody>
-                    </table>
+                <section className="flex flex-col flex-1 overflow-hidden">
+                    <div className="w-full overflow-hidden flex-1 flex flex-col gap-4 -mt-px">
+                        <section className="flex-1 border overflow-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10 sticky top-0 h-4">
+                                        {/* Table headers */}
+                                        {["ID", "Description"].map(
+                                            (header, i) => (
+                                                <th
+                                                    scope="col"
+                                                    key={i}
+                                                    className="px-3 py-2 whitespace-nowrap w-max"
+                                                >
+                                                    {header}
+                                                </th>
+                                            )
+                                        )}
+                                        <th
+                                            scope="col"
+                                            className="px-3 py-2 whitespace-nowrap w-max"
+                                        >
+                                            <span className="sr-only">
+                                                Edit
+                                            </span>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {services &&
+                                        services
+                                            .sort((a, b) =>
+                                                a.name.localeCompare(b.name)
+                                            )
+                                            .map((service) => (
+                                                <tr
+                                                    key={service.id}
+                                                    className="border-b text-sm last:border-b-0"
+                                                >
+                                                    <td className="p-4">
+                                                        {service.id}
+                                                    </td>
+                                                    <td className="p-4">
+                                                        {service.name}
+                                                    </td>
+                                                    <td className="p-4">
+                                                        <UpdateServiceDialog
+                                                            service={service}
+                                                            onUpdated={(
+                                                                updated
+                                                            ) =>
+                                                                setServices(
+                                                                    (prev) =>
+                                                                        prev.map(
+                                                                            (
+                                                                                s
+                                                                            ) =>
+                                                                                s.id ===
+                                                                                updated.id
+                                                                                    ? updated
+                                                                                    : s
+                                                                        )
+                                                                )
+                                                            }
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                </tbody>
+                            </table>
+                        </section>
+                    </div>
                 </section>
             </div>
         </div>

@@ -330,7 +330,9 @@ export function EditClientDialog({
             }}
         >
             <DialogTrigger asChild>
-                <Button variant="ghost">Modifier le client</Button>
+                <Button size="sm" variant="outline">
+                    Modifier le client
+                </Button>
             </DialogTrigger>
             <DialogContent className="max-h-screen overflow-auto sm:max-w-2xl">
                 <DialogHeader>

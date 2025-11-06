@@ -194,7 +194,7 @@ export default function EditEmployeeDialog({
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button size="sm" variant="ghost">
+                <Button size="sm" variant="outline">
                     Gérer
                 </Button>
             </DialogTrigger>

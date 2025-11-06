@@ -203,7 +203,7 @@ function TimeEntry({
                     </time>
                 </header>
                 {entry.details && (
-                    <p className="mt-1 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+                    <p className="mt-1 text-sm leading-6 text-zinc-700 dark:text-zinc-300 whitespace-pre-line">
                         {entry.details}
                     </p>
                 )}

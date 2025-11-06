@@ -129,9 +129,8 @@ export function ClientPickerRow({ form }) {
                 .from("clients_team")
                 .select("client:clients(id, name, clients_mandats!inner(*))")
                 .eq("user_id", user.id)
-                .is("client.clients_mandats.deleted_at", null)
                 .order("name", { referencedTable: "client" });
-            // TODO: ajouter un filtre pour n'inclure que les clients actifs (s'ils ont un mandat actif)
+
             if (error) {
                 console.error("Error fetching team clients:", error);
                 setClients([]);

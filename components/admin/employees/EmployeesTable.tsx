@@ -304,23 +304,27 @@ function EmployeeRow({
                 {displayRemaining}
             </td>
 
-            <td>{m.rate != null ? `${m.rate.toFixed(2)} $` : "—"}</td>
-            <td>
+            <td className="p-4">
+                {m.rate != null ? `${m.rate.toFixed(2)} $` : "—"}
+            </td>
+            <td className="p-4">
                 {m.realHourlyRate != null
                     ? `${m.realHourlyRate.toFixed(2)} $`
                     : "—"}
             </td>
-            <td>
+            <td className="p-4">
                 {m.realRateCost != null
                     ? `${m.realRateCost.toFixed(2)} $`
                     : "—"}
             </td>
-            <td>
+            <td className="p-4">
                 {m.internalCost != null
                     ? `${m.internalCost.toFixed(2)} $`
                     : "—"}
             </td>
-            <td>{m.emptyCost != null ? `${m.emptyCost.toFixed(2)} $` : "—"}</td>
+            <td className="p-4">
+                {m.emptyCost != null ? `${m.emptyCost.toFixed(2)} $` : "—"}
+            </td>
 
             <td className="p-4 text-sm text-muted-foreground">
                 {(e as any).created_at

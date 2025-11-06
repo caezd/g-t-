@@ -48,7 +48,8 @@ export default async function Page() {
         })
         .is("clients.unassigned_time_entries.mandat_id", null, {
             referencedTable: "clients.time_entries",
-        });
+        })
+        .is("clients.clients_mandats.deleted_at", null);
 
     if (error) throw error;
 

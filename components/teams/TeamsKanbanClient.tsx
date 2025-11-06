@@ -192,9 +192,54 @@ function ClientCard({ c }: { c: any }) {
                         </table>
                     </div>
                 ) : (
-                    <p className="text-sm text-muted-foreground">
-                        Aucun mandat associé.
-                    </p>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="text-left font-medium text-xs">
+                                <tr className="[&_th]:py-2">
+                                    <th>Mandat</th>
+                                    <th>Chargé</th>
+                                    <th>Adjoint</th>
+                                    <th>Aidant</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                                {c.unassigned_time_entries?.length ? (
+                                    <tr className="[&_td]:py-2 dark:text-red-400 text-red-600">
+                                        <td>Hors mandat</td>
+                                        <td>
+                                            {FormatDecimalsToHours(
+                                                sumByRole(
+                                                    c.unassigned_time_entries
+                                                ).manager
+                                            )}
+                                        </td>
+                                        <td>
+                                            {FormatDecimalsToHours(
+                                                sumByRole(
+                                                    c.unassigned_time_entries
+                                                ).assistant
+                                            )}
+                                        </td>
+                                        <td>
+                                            {FormatDecimalsToHours(
+                                                sumByRole(
+                                                    c.unassigned_time_entries
+                                                ).helper
+                                            )}
+                                        </td>
+                                        <td className="font-medium">
+                                            {FormatDecimalsToHours(
+                                                sumByRole(
+                                                    c.unassigned_time_entries
+                                                ).total
+                                            )}
+                                        </td>
+                                    </tr>
+                                ) : null}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </CardContent>
         </Card>

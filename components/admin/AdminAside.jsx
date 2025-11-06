@@ -54,7 +54,10 @@ const AdminAside = () => {
             className="hidden xl:flex xl:w-72 xl:z-50 xl:inset-y-0 xl:flex-col shrink-0 bg-accent-400 dark:bg-accent-400/90"
             suppressHydrationWarning
         >
-            <div className="flex flex-col gap-y-5 overflow-y-auto sticky top-0">
+            <div
+                suppressHydrationWarning
+                className="flex flex-col gap-y-5 overflow-y-auto sticky top-0"
+            >
                 <header className="flex h-16 shrink-0 gap-6 items-center px-6 text-zinc-50">
                     <AppLogo
                         width={32}

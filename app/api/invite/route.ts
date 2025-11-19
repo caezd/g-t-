@@ -65,7 +65,7 @@ export async function POST(req: Request) {
                     quota_max,
                     invited_via: "admin",
                 },
-                redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/set-password`,
+                redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/set-password`,
             });
 
         if (invErr)

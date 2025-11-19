@@ -56,8 +56,8 @@ const Header = async () => {
                             <DropdownMenuTrigger className="flex items-center gap-2">
                                 <Avatar>
                                     <AvatarFallback>
-                                        {user.email
-                                            .split("@")[0]
+                                        {user.full_name
+                                            .split(" ")[0]
                                             .charAt(0)
                                             .toUpperCase()}
                                     </AvatarFallback>

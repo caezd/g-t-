@@ -100,7 +100,7 @@ function TimeEntry({
     const canEdit = entry.is_closed === false;
 
     return (
-        <li className="relative flex gap-x-4">
+        <li className="relative flex gap-x-4 group">
             <div
                 className={cn(
                     "absolute top-0 left-0 flex w-6 justify-center",
@@ -138,7 +138,7 @@ function TimeEntry({
                                     "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent-400 rounded-full relative flex bg-zinc-300 size-6 dark:bg-zinc-800 -mt-2",
                                     mandat &&
                                         "bg-accent-400 dark:bg-accent-400",
-                                    canEdit && "cursor-pointer group",
+                                    canEdit && "cursor-pointer",
                                     !canEdit && "opacity-50 cursor-not-allowed"
                                 )}
                                 title={

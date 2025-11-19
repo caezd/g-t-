@@ -50,6 +50,18 @@ export default function ClientPanel({ employeeId }: { employeeId: string }) {
     const start = React.useMemo(() => startOfWeekSunday(anchor), [anchor]);
     const end = React.useMemo(() => endOfWeekSaturday(anchor), [anchor]);
 
+    // 👉 Total des heures de la semaine
+    const totalHours = React.useMemo(
+        () =>
+            entries.reduce(
+                (sum, e) =>
+                    sum +
+                    (typeof e.billed_amount === "number" ? e.billed_amount : 0),
+                0
+            ),
+        [entries]
+    );
+
     const selectedIds = React.useMemo(
         () =>
             Object.entries(checked)
@@ -284,6 +296,21 @@ export default function ClientPanel({ employeeId }: { employeeId: string }) {
                         </tr>
                     )}
                 </tbody>
+                {/* 👉 Ligne de total tout en bas du tableau */}
+                <tfoot>
+                    <tr className="border-t bg-muted/30 font-medium">
+                        <td
+                            colSpan={6}
+                            className="p-2 text-right uppercase text-xs tracking-wide text-muted-foreground"
+                        >
+                            Total de la semaine
+                        </td>
+                        <td className="p-2 text-right">
+                            {totalHours.toFixed(2)}
+                        </td>
+                        <td colSpan={2}></td>
+                    </tr>
+                </tfoot>
             </table>
         </>
     );

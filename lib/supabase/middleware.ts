@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
     "/auth/error",
     "/auth/forgot-password",
     "/auth/update-password",
+    "/auth/confirm",
 ];
 
 const protectedRoutes = ["/admin"];

@@ -7,8 +7,8 @@ import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-    title: "Next.js and Supabase Starter Kit",
-    description: "The fastest way to build apps with Next.js and Supabase",
+    title: "Gétime — FOCUS TDL",
+    description: "Une plateforme de gestion de feuilles de temps.",
 };
 
 const geistSans = Geist({

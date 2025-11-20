@@ -604,8 +604,9 @@ export function TimeEntryForm({ onCreated }) {
                                                 setIsCalendarOpen(false);
                                             }}
                                             weekStartsOn={0}
-                                            disabled={(date) =>
-                                                date > new Date() ||
+                                            disabled={
+                                                (date) =>
+                                                    date > new Date() /* ||
                                                 date <
                                                     set(new Date(), {
                                                         // limite à la semaine en cours seulement
@@ -615,7 +616,7 @@ export function TimeEntryForm({ onCreated }) {
                                                             new Date().getDate() -
                                                             new Date().getDay() -
                                                             1,
-                                                    })
+                                                    }) */
                                             }
                                         />
                                     </PopoverContent>

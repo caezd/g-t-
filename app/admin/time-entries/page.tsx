@@ -23,13 +23,14 @@ export default async function Page() {
         return <div className="p-6">Accès refusé.</div>;
     }
 
-    // Option: charger la liste des employés pour alimenter le filtre (combobox)
+    // Charger la liste des employés ACTIFS pour alimenter le tableau + filtre
     const { data: employees } = await supabase
         .from("profiles")
-        .select("id, full_name, email")
+        .select("id, full_name, email, matricule, is_active")
+        .eq("is_active", true)
         .order("full_name", { ascending: true });
 
-    // Option: charger la liste des clients pour alimenter le filtre (combobox)
+    // Charger la liste des clients pour alimenter le filtre
     const { data: clients } = await supabase
         .from("clients")
         .select("*")

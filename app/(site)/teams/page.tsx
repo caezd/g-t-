@@ -1,15 +1,10 @@
 // app/(app)/teams/page.tsx
 import { createClient } from "@/lib/supabase/server";
 import TeamsKanbanClient from "@/components/teams/TeamsKanbanClient";
-import { startOfWeekSunday, endOfWeekSaturday } from "@/utils/date";
 
 export default async function Page() {
     const supabase = await createClient();
     const { user } = await supabase.auth.getUser().then(({ data }) => data);
-
-    const now = new Date();
-    const first = startOfWeekSunday(now);
-    const last = endOfWeekSaturday(now);
 
     const { data, error } = await supabase
         .from("clients_team")
@@ -33,19 +28,6 @@ export default async function Page() {
             `
         )
         .eq("user_id", user.id)
-        .gte("clients.clients_mandats.time_entries.doc", first.toISOString(), {
-            referencedTable: "clients_mandats.time_entries",
-        })
-        .lte("clients.clients_mandats.time_entries.doc", last.toISOString(), {
-            referencedTable: "clients_mandats.time_entries",
-        })
-
-        .gte("clients.unassigned_time_entries.doc", first.toISOString(), {
-            referencedTable: "clients.time_entries",
-        })
-        .lte("clients.unassigned_time_entries.doc", last.toISOString(), {
-            referencedTable: "clients.time_entries",
-        })
         .is("clients.unassigned_time_entries.mandat_id", null, {
             referencedTable: "clients.time_entries",
         })
@@ -53,6 +35,5 @@ export default async function Page() {
 
     if (error) throw error;
 
-    // ⬇️ passe des données sérialisables à ton composant client
     return <TeamsKanbanClient rows={data ?? []} />;
 }

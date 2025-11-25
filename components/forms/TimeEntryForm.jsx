@@ -123,8 +123,45 @@ export function ClientPickerRow({ form }) {
             const {
                 data: { user },
             } = await supabase.auth.getUser();
-            if (!user) return setClients([]);
+            if (!user) {
+                setClients([]);
+                return;
+            }
 
+            // On va chercher le rôle dans profiles (role = "admin" ou autre)
+            const { data: profile, error: profileError } = await supabase
+                .from("profiles")
+                .select("role")
+                .eq("id", user.id)
+                .maybeSingle();
+
+            if (profileError) {
+                console.error("Error fetching profile:", profileError);
+            }
+
+            // 1) Si admin → accès à tous les clients
+            if (profile?.role === "admin") {
+                const { data, error } = await supabase
+                    .from("clients")
+                    .select("id, name, clients_mandats!inner(*)")
+                    .order("name");
+
+                if (error) {
+                    console.error("Error fetching all clients:", error);
+                    setClients([]);
+                    return;
+                }
+
+                const list = (data ?? []).sort((a, b) =>
+                    a.name.localeCompare(b.name, "fr")
+                );
+
+                // On continue d’exclure le client interne (id = 0)
+                setClients(list.filter((c) => c.id !== 0));
+                return;
+            }
+
+            // 2) Sinon → comportement actuel : seulement les clients de l’équipe
             const { data, error } = await supabase
                 .from("clients_team")
                 .select("client:clients(id, name, clients_mandats!inner(*))")
@@ -146,6 +183,7 @@ export function ClientPickerRow({ form }) {
             );
             setClients(list.filter((c) => c.id !== 0));
         }
+
         fetchClients();
     }, [supabase]);
 
@@ -491,6 +529,16 @@ export function TimeEntryForm({ onCreated }) {
         const profile_id = user?.id;
         if (!profile_id) return;
 
+        // 1) Rôle global (profil)
+        const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", profile_id)
+            .maybeSingle();
+
+        if (profileError) {
+            console.error("Error fetching profile:", profileError);
+        }
         // Récupérer le rôle dans clients_team (tolérant: peut être null)
         const { data: teamData } = await supabase
             .from("clients_team")
@@ -498,6 +546,13 @@ export function TimeEntryForm({ onCreated }) {
             .eq("user_id", profile_id)
             .eq("client_id", values.client_id)
             .maybeSingle();
+
+        let entryRole = null;
+        if (teamData?.role) {
+            entryRole = teamData.role;
+        } else if (profile?.role === "admin") {
+            entryRole = "admin";
+        }
 
         // 1) INSERT minimal pour obtenir l'id
         const { data: inserted, error: insertError } = await supabase
@@ -511,7 +566,7 @@ export function TimeEntryForm({ onCreated }) {
                     service_id: values.service_id,
                     mandat_id: values.mandat_id || null,
                     profile_id,
-                    role: teamData?.role || null,
+                    role: entryRole,
                 },
             ])
             .select("id") // ⚠️ juste l'id pour être sûr de ne rien filtrer

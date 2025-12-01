@@ -528,6 +528,9 @@ const ClientPage = () => {
                             </h1>
                         </div>
                         <div className="flex mt-4 md:mt-0 md:ml-4">
+                            <Link href="/admin/time-entries" className="mr-2">
+                                <Button variant="ghost">Rapport</Button>
+                            </Link>
                             <NewClientDialog
                                 onCreated={(client) =>
                                     setClients((prev) => [...prev, client])

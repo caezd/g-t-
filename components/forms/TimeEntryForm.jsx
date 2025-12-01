@@ -10,7 +10,12 @@ import { z } from "zod";
 import { cn } from "@/lib/utils";
 import { toHoursDecimal, dateAtNoonLocal } from "@/utils/date";
 
-import { CalendarIcon, ChevronsUpDown, Check } from "lucide-react";
+import {
+    CalendarIcon,
+    ChevronsUpDown,
+    Check,
+    ArrowLeftRight,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -509,6 +514,25 @@ function ServicePickerRow({ form }) {
 export function TimeEntryForm({ onCreated }) {
     const supabase = createClient();
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+    const BILLING_MODE_KEY = "time-entry-billing-mode";
+
+    const [billingMode, setBillingMode] = useState("duration"); //
+    const [rangeStart, setRangeStart] = useState("08:30");
+    const [rangeEnd, setRangeEnd] = useState("09:30");
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const stored = window.localStorage.getItem(BILLING_MODE_KEY);
+        if (stored === "duration" || stored === "range") {
+            setBillingMode(stored);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        window.localStorage.setItem(BILLING_MODE_KEY, billingMode);
+    }, [billingMode]);
+
     const form = useForm({
         resolver: zodResolver(formSchema),
         defaultValues: {
@@ -684,17 +708,136 @@ export function TimeEntryForm({ onCreated }) {
                         control={form.control}
                         name="billed_amount"
                         render={({ field }) => {
+                            // calcule la durée à partir de rangeStart / rangeEnd
+                            const computeFromRange = (start, end) => {
+                                if (!start || !end) return;
+
+                                const [sh, sm] = start.split(":").map(Number);
+                                const [eh, em] = end.split(":").map(Number);
+
+                                if (
+                                    Number.isNaN(sh) ||
+                                    Number.isNaN(sm) ||
+                                    Number.isNaN(eh) ||
+                                    Number.isNaN(em)
+                                ) {
+                                    return;
+                                }
+
+                                let diffMinutes = eh * 60 + em - (sh * 60 + sm);
+
+                                // on bloque à 0 si fin < début (tu peux adapter pour gérer le "wrap" minuit si tu veux)
+                                if (diffMinutes < 0) diffMinutes = 0;
+
+                                const h = Math.floor(diffMinutes / 60);
+                                const m = diffMinutes % 60;
+
+                                let str;
+                                if (h > 0 && m > 0) {
+                                    // ex: 1h30
+                                    str = `${h}h${m}`;
+                                } else if (h > 0) {
+                                    // ex: 2h
+                                    str = `${h}h`;
+                                } else if (m > 0) {
+                                    // ex: 45m
+                                    str = `${m}m`;
+                                } else {
+                                    str = "0";
+                                }
+
+                                field.onChange(str);
+                            };
+
                             return (
                                 <FormItem className="flex flex-col">
-                                    <FormLabel>Temps facturé</FormLabel>
+                                    <div className="flex items-center justify-between">
+                                        <FormLabel>Temps facturé</FormLabel>
+
+                                        {/* bouton switch à droite du label */}
+                                        <button
+                                            type="button"
+                                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                                            onClick={() =>
+                                                setBillingMode((prev) =>
+                                                    prev === "duration"
+                                                        ? "range"
+                                                        : "duration"
+                                                )
+                                            }
+                                        >
+                                            <ArrowLeftRight className="h-3 w-3" />
+                                        </button>
+                                    </div>
+
                                     <FormControl>
-                                        <Input placeholder="1h30" {...field} />
+                                        {billingMode === "duration" ? (
+                                            // mode actuel : saisie directe
+                                            <Input
+                                                placeholder="1h30"
+                                                {...field}
+                                            />
+                                        ) : (
+                                            // mode "plage de temps"
+                                            <div className="w-full flex">
+                                                {/* input caché pour garder billed_amount enregistré dans RHF */}
+                                                <input
+                                                    type="hidden"
+                                                    {...field}
+                                                />
+                                                <div className="flex justify-between items-center gap-2 w-full">
+                                                    <Input
+                                                        type="time"
+                                                        className="w-[120px]"
+                                                        value={rangeStart}
+                                                        onChange={(e) => {
+                                                            const v =
+                                                                e.target.value;
+                                                            setRangeStart(v);
+                                                            computeFromRange(
+                                                                v,
+                                                                rangeEnd
+                                                            );
+                                                        }}
+                                                    />
+                                                    <span className="text-sm text-muted-foreground">
+                                                        à
+                                                    </span>
+                                                    <Input
+                                                        type="time"
+                                                        className="w-[120px]"
+                                                        value={rangeEnd}
+                                                        onChange={(e) => {
+                                                            const v =
+                                                                e.target.value;
+                                                            setRangeEnd(v);
+                                                            computeFromRange(
+                                                                rangeStart,
+                                                                v
+                                                            );
+                                                        }}
+                                                    />
+                                                    <span className="text-xs text-muted-foreground font-medium">
+                                                        (Total :{" "}
+                                                        {field.value || "0"})
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
                                     </FormControl>
+
+                                    <FormDescription className="text-xs text-muted-foreground">
+                                        {billingMode === "duration"
+                                            ? "Ex. 1h30, 1:30 ou 90m."
+                                            : "Choisis une heure de début et de fin."}
+                                    </FormDescription>
+
                                     <FormMessage />
                                 </FormItem>
                             );
                         }}
                     />
+
                     {/* row */}
 
                     <ClientPickerRow form={form} />

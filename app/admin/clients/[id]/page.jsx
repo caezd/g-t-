@@ -29,7 +29,7 @@ export default async function ClientPage({ params }) {
 
     return (
         <>
-            <section className="p-8 flex flex-col gap-4">
+            <section className="p-8 flex w-full flex-col gap-4">
                 <header className="lg:flex lg:items-center lg:justify-between">
                     <div className="min-w-0 flex-1">
                         <nav className="flex">
@@ -69,7 +69,7 @@ export default async function ClientPage({ params }) {
                         </span>
                     </div>
                 </header>
-                <section className="grid lg:grid-cols-3 gap-8 mt-12">
+                <section className="w-full grid lg:grid-cols-3 gap-8 mt-12">
                     <div className="col-span-2">
                         {client?.clients_mandats.map((mandat) => (
                             <MandateTimeEntriesCard
@@ -80,14 +80,8 @@ export default async function ClientPage({ params }) {
                         ))}
                     </div>
                     <div className="col-span-1 lg:col-start-3">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Équipe</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <ClientTeamList clientId={clientId} />
-                            </CardContent>
-                        </Card>
+                        <h2 className="text-lg font-medium mb-4">Équipe</h2>
+                        <ClientTeamList clientId={clientId} />
                     </div>
                 </section>
             </section>

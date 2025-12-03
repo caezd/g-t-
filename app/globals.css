@@ -80,7 +80,7 @@
 
 .prose img,
 .prose video {
-    max-width: 80%;
+    max-width: 95%;
     object-fit: contain;
     height: unset;
     @apply border;

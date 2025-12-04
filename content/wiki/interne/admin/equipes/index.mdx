@@ -1,5 +1,5 @@
 ---
-title: "Gestion des équipes"
+title: "Équipes"
 description: "Comment gérer les équipes au sein de la plateforme Gétime."
 access:
     mode: "admin"
@@ -10,13 +10,14 @@ access:
 
 ## Ajouter un employé à l'équipe
 
-L'encadré de gestion des équipes se trouve à droite de la page. Il permet d'ajouter et de modifier les employés assignés à ce client en leur assignant le rôle de `Chargé`, `Adjoint` ou `Aidant` dans le dossier du client.
+L'encadré de gestion des équipes se trouve à droite de la page. Il permet d'ajouter et de modifier les employés assignés à ce client en leur assignant le rôle de `Chargé`, `Adjoint` ou `Soutien` dans le dossier du client.
 
 ![Ajouter à l'équipe](/img/ajouter-equipe.png)
 
-import { Check } from "lucide-react";
+import { Check, UserPlus } from "lucide-react";
 
-1. Cliquer sur le bouton `Ajouter`. Une fenêtre s'ouvre permettant de filtrer les utilisateurs par nom ou adresse courriel.
+1. Cliquer sur le bouton <UserPlus size={16} className="inline-flex" /> `Modifier l'équipe`. Une fenêtre s'ouvre permettant de filtrer les utilisateurs par nom ou adresse courriel.
+    ![Modifier l'équipe](/img/popup-equipe.png)
 1. Choississez le rôle à assigner.
 1. Sélectionner un ou plusieurs utilisateurs dans la liste. L'icône <Check size={16} className="inline-flex" /> indique les utilisateurs sélectionnés. **Tous les utilisateurs sélectionnés se verront attribuer le rôle sélectionné précédemment.**
 1. Il est possible d'ajuster le quota d'heures que l'utilisateur est attendu de travailler pour ce client chaque semaine. Ce quota permettra de comptabiliser ses disponibilités dans le calendrier global.

@@ -26,6 +26,7 @@ import {
 import { ChevronsUpDown, Check } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { formatHoursHuman } from "@/utils/date";
 
 type TimeEntry = {
   id: string;
@@ -241,6 +242,11 @@ export default function TimeEntriesClient({
   }, [entries, employee, role, client]);
 
   const filteredTotal = filteredEntries.length;
+  const filteredTotalHours = useMemo(
+    () =>
+      filteredEntries.reduce((sum, e) => sum + Number(e.billed_amount ?? 0), 0),
+    [filteredEntries],
+  );
   const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
   const currentPage = Math.min(Math.max(page, 1), totalPages);
 
@@ -340,13 +346,25 @@ export default function TimeEntriesClient({
               </TableCell>
               <TableCell>{getRoleLabel(e.role)}</TableCell>
               <TableCell className="text-right">
-                {Number(e.billed_amount ?? 0).toFixed(2)} h
+                {formatHoursHuman(e.billed_amount ?? 0)}
               </TableCell>
               <TableCell className="max-w-xs truncate">
                 {e.details ?? ""}
               </TableCell>
             </TableRow>
           ))}
+
+          {filteredTotal > 0 && (
+            <TableRow className="font-medium">
+              <TableCell colSpan={4} className="text-right">
+                Total
+              </TableCell>
+              <TableCell className="text-right">
+                {formatHoursHuman(filteredTotalHours)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          )}
 
           {paginatedEntries.length === 0 && (
             <TableRow>

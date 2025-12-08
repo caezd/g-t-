@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { addDays, startOfWeek, endOfWeek, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import TimeEntriesClient from "./TimeEntriesClient";
+import { formatHoursHuman } from "@/utils/date";
 
 type TimeEntry = {
   id: string;
@@ -86,12 +87,11 @@ export default async function GetimeDashboardPage({
 }) {
   const supabase = await createClient();
   const today = new Date();
-
-  // ----- Semaine (dimanche -> samedi) -----
   const weekParam =
-    typeof searchParams?.week === "string" ? searchParams.week : undefined;
+    typeof (await searchParams)?.week === "string"
+      ? (await searchParams).week
+      : undefined;
 
-  // IMPORTANT : "YYYY-MM-DD" => UTC, donc on force locale
   const baseDate = weekParam ? new Date(weekParam + "T00:00:00") : today;
 
   const weekStart = startOfWeek(baseDate, { weekStartsOn: 0 });
@@ -184,7 +184,9 @@ export default async function GetimeDashboardPage({
             <CardTitle>Total d&apos;heures</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{totalHoursAll.toFixed(2)} h</p>
+            <p className="text-2xl font-bold">
+              {formatHoursHuman(totalHoursAll)}
+            </p>
           </CardContent>
         </Card>
 

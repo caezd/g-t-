@@ -9,14 +9,9 @@ import { SearchableCombobox } from "@/components/ui/SearchableCombobox";
 
 import { z } from "zod";
 import { cn } from "@/lib/utils";
-import { toHoursDecimal, dateAtNoonLocal } from "@/utils/date";
+import { toHoursDecimal, dateAtNoonLocal, normalizeDate } from "@/utils/date";
 
-import {
-  CalendarIcon,
-  ChevronsUpDown,
-  Check,
-  ArrowLeftRight,
-} from "lucide-react";
+import { CalendarIcon, ArrowLeftRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,14 +32,6 @@ import {
   PopoverClose,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -422,6 +409,34 @@ export function TimeEntryForm({ onCreated }) {
   const [rangeStart, setRangeStart] = useState("08:30");
   const [rangeEnd, setRangeEnd] = useState("09:30");
 
+  const [lockedUntil, setLockedUntil] = useState();
+
+  useEffect(() => {
+    async function fetchLockedUntil() {
+      const { data, error } = await supabase
+        .from("app_settings")
+        .select("timesheet_locked_until")
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error fetching timesheet_locked_until:", error);
+        return;
+      }
+
+      if (data?.timesheet_locked_until) {
+        // data.timesheet_locked_until === "YYYY-MM-DD"
+        const [y, m, d] = data.timesheet_locked_until.split("-").map(Number);
+        // Date locale, sans décalage UTC
+        const localDate = new Date(y, m - 1, d);
+        setLockedUntil(localDate);
+      } else {
+        setLockedUntil(null);
+      }
+    }
+
+    fetchLockedUntil();
+  }, [supabase]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(BILLING_MODE_KEY);
@@ -576,19 +591,23 @@ export function TimeEntryForm({ onCreated }) {
                         setIsCalendarOpen(false);
                       }}
                       weekStartsOn={0}
-                      disabled={
-                        (date) => date > new Date() /* ||
-                                                date <
-                                                    set(new Date(), {
-                                                        // limite à la semaine en cours seulement
-                                                        month: new Date().getMonth(),
-                                                        year: new Date().getFullYear(),
-                                                        date:
-                                                            new Date().getDate() -
-                                                            new Date().getDay() -
-                                                            1,
-                                                    }) */
-                      }
+                      disabled={(date) => {
+                        const d = normalizeDate(date);
+                        const today = normalizeDate(new Date());
+
+                        // 1) Interdire le futur
+                        if (d > today) return true;
+
+                        // 2) Interdire toute date antérieure OU égale à la date verrouillée
+                        if (lockedUntil) {
+                          const lock = normalizeDate(lockedUntil);
+                          if (d <= lock) {
+                            return true; // inclus : samedi de la semaine verrouillée + tout ce qui est avant
+                          }
+                        }
+
+                        return false;
+                      }}
                     />
                   </PopoverContent>
                 </Popover>

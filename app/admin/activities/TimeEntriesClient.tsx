@@ -46,6 +46,11 @@ type TimeEntry = {
   clients?: {
     name: string | null;
   } | null;
+  mandat?: {
+    type: {
+      description: string;
+    };
+  } | null;
 };
 
 type Option = {
@@ -265,6 +270,8 @@ export default function TimeEntriesClient({
   const goPrev = () => setPage((p) => Math.max(1, p - 1));
   const goNext = () => setPage((p) => Math.min(totalPages, p + 1));
 
+  console.log(entries);
+
   return (
     <section className="space-y-3">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -337,12 +344,15 @@ export default function TimeEntriesClient({
               <TableCell>{format(new Date(e.doc), "dd/MM/yyyy")}</TableCell>
               <TableCell>{e.profiles?.full_name ?? "(Sans nom)"}</TableCell>
               <TableCell>
-                {String(e.client_id) === "0"
-                  ? INTERNAL_CLIENT_OPTION.label
-                  : e.client_id !== null
-                    ? (e.clients?.name ??
-                      `(Client inconnu) – ${String(e.client_id).slice(0, 8)}`)
-                    : "—"}
+                <span className="font-medium">
+                  {String(e.client_id) === "0"
+                    ? INTERNAL_CLIENT_OPTION.label
+                    : e.client_id !== null
+                      ? (e.clients?.name ??
+                        `(Client inconnu) – ${String(e.client_id).slice(0, 8)}`)
+                      : "—"}
+                </span>
+                {e.mandat && ` (${e.mandat?.type.description})`}
               </TableCell>
               <TableCell>{getRoleLabel(e.role)}</TableCell>
               <TableCell className="text-right">

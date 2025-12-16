@@ -16,6 +16,9 @@ export const getDateWeek = (date) => {
       : 1;
 };
 
+export const normalizeDate = (d) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
 /* How to get first and last day of the current week in JavaScript */
 export const weekRange = (date) => {
   var curr = new Date(); // get current date
@@ -59,6 +62,12 @@ export function FormatDecimalsToHours(floatHours) {
   const hours = Math.floor(totalMin / 60);
   const minutes = totalMin % 60;
 
+  if (minutes === 0) {
+    // Pas de minutes -> on n'affiche que les heures
+    return `${sign}${hours}h`;
+  }
+
+  // Minutes présentes -> on garde le format avec 2 chiffres
   return `${sign}${hours}h${minutes.toString().padStart(2, "0")}`;
 }
 
@@ -92,12 +101,7 @@ export function toHoursDecimal(input) {
 }
 
 export function formatHoursHuman(decimal) {
-  if (decimal == null || Number.isNaN(decimal)) return "";
-  const minsTotal = Math.round(decimal * 60);
-  const h = Math.floor(minsTotal / 60);
-  const m = minsTotal % 60;
-  if (m === 0) return `${h}h`;
-  return `${h}h${String(m).padStart(2, "0")}`;
+  return FormatDecimalsToHours(decimal);
 }
 
 export function dateAtNoonLocal(d) {

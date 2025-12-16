@@ -86,11 +86,9 @@ export default async function GetimeDashboardPage({
   searchParams?: { [key: string]: string | string[] | undefined };
 }) {
   const supabase = await createClient();
+  const sp = await searchParams;
   const today = new Date();
-  const weekParam =
-    typeof (await searchParams)?.week === "string"
-      ? (await searchParams).week
-      : undefined;
+  const weekParam = typeof sp.week === "string" ? sp.week : undefined;
 
   const baseDate = weekParam ? new Date(weekParam + "T00:00:00") : today;
 
@@ -121,7 +119,8 @@ export default async function GetimeDashboardPage({
       is_closed,
       created_at,
       profiles ( full_name ),
-      clients ( name )
+      clients ( name ),
+      mandat:clients_mandats(*, type:mandat_types!inner(description))
     `,
     )
     .gte("doc", fromStr)
@@ -228,7 +227,7 @@ export default async function GetimeDashboardPage({
                   {u.workedDays} jour{u.workedDays > 1 ? "s" : ""}
                 </TableCell>
                 <TableCell className="text-right">
-                  {u.totalHours.toFixed(2)} h
+                  {formatHoursHuman(u.totalHours)}
                 </TableCell>
               </TableRow>
             ))}

@@ -49,6 +49,16 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
+import { format, startOfWeek, endOfWeek } from "date-fns";
+import { frCA } from "date-fns/locale";
+
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -425,9 +435,27 @@ async function softDeleteClient(
 }
 
 const ClientPage = () => {
-  const supabase = createClient();
-  const [clients, setClients] = useState([]);
+  const supabase = useMemo(() => createClient(), []);
+  const [clients, setClients] = useState<any[]>([]);
   const [q, setQ] = useState("");
+
+  // --- Filtre dates (shadcn Calendar) ---
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(
+    () => startOfWeek(new Date(), { weekStartsOn: 0 }), // 0 = dimanche (dim->sam)
+  );
+
+  const [dateTo, setDateTo] = useState<Date | undefined>(
+    () => endOfWeek(new Date(), { weekStartsOn: 0 }), // samedi
+  );
+  const [onlyWithHours, setOnlyWithHours] = useState(false);
+
+  // Map client_id -> total heures
+  const [hoursByClientId, setHoursByClientId] = useState<
+    Record<string, number>
+  >({});
+  const [hoursLoading, setHoursLoading] = useState(false);
+
+  const toISODate = (d?: Date) => (d ? format(d, "yyyy-MM-dd") : null);
 
   useEffect(() => {
     const fetchClients = async () => {
@@ -435,50 +463,94 @@ const ClientPage = () => {
         .from("clients")
         .select(
           `*,
-                mandats_count:clients_mandats(count),
-                mandats:clients_mandats(*,
-                    mandat_types(code)
-                ),
-                members_count:clients_team(count),
-                members:clients_team(
-                  id,
-                  role,
-                  profiles (
-                    id,
-                    full_name,
-                    email
-                  )
-                )`,
+            mandats_count:clients_mandats(count),
+            mandats:clients_mandats(*,
+              mandat_types(code)
+            ),
+            members_count:clients_team(count),
+            members:clients_team(
+              id,
+              role,
+              profiles (
+                id,
+                full_name,
+                email
+              )
+            )`,
         )
         .is("mandats_count.deleted_at", null)
         .is("mandats.deleted_at", null);
+
       if (error) {
         console.error("Error fetching clients:", error);
-      } else {
-        const normalized = data.map((c: any) => ({
-          ...c,
-          mandatsCount: c.mandats_count?.[0]?.count ?? 0,
-          membersCount: c.members_count?.[0]?.count ?? 0,
-        }));
-
-        setClients(normalized);
-        console.log("Fetched clients:", normalized);
+        return;
       }
+
+      const normalized = (data ?? []).map((c: any) => ({
+        ...c,
+        mandatsCount: c.mandats_count?.[0]?.count ?? 0,
+        membersCount: c.members_count?.[0]?.count ?? 0,
+      }));
+
+      setClients(normalized);
     };
+
     fetchClients();
   }, [supabase]);
 
+  // --- Heures réelles par client via RPC (pas d'agrégats PostgREST) ---
+  useEffect(() => {
+    const fetchRealHours = async () => {
+      setHoursLoading(true);
+
+      const p_from = toISODate(dateFrom);
+      const p_to = toISODate(dateTo);
+
+      const { data, error } = await supabase.rpc("client_real_hours", {
+        p_from,
+        p_to,
+      });
+
+      if (error) {
+        console.error("Error fetching real hours (rpc):", error);
+        setHoursByClientId({});
+        setHoursLoading(false);
+        return;
+      }
+
+      const map: Record<string, number> = {};
+      for (const row of data ?? []) {
+        map[String((row as any).client_id)] = Number(
+          (row as any).total_hours ?? 0,
+        );
+      }
+
+      setHoursByClientId(map);
+      setHoursLoading(false);
+    };
+
+    fetchRealHours();
+  }, [supabase, dateFrom, dateTo]);
+
   const filtered = useMemo(() => {
     const query = norm(q);
-    if (!query) return clients;
 
-    return clients.filter((c: any) => {
-      // Concatène les champs pertinents pour la recherche
-      const name = c.name ?? "";
-      const hay = norm([name].join(" "));
-      return hay.includes(query);
-    });
-  }, [q, clients]);
+    let list = clients;
+
+    if (query) {
+      list = list.filter((c: any) => {
+        const name = c.name ?? "";
+        const hay = norm([name].join(" "));
+        return hay.includes(query);
+      });
+    }
+
+    if (onlyWithHours) {
+      list = list.filter((c: any) => (hoursByClientId[String(c.id)] ?? 0) > 0);
+    }
+
+    return list;
+  }, [q, clients, onlyWithHours, hoursByClientId]);
 
   return (
     <>
@@ -506,18 +578,117 @@ const ClientPage = () => {
               setQuery={setQ}
               placeholder="Rechercher un client..."
             />
-            <div className="w-full overflow-hidden flex-1 flex flex-col gap-4 -mt-px">
-              <section className="flex-1 border overflow-auto">
+
+            {/* Barre filtres dates (Calendar shadcn) */}
+            <div className="border-b px-4 py-3 flex flex-col gap-3">
+              <div className="flex flex-col md:flex-row md:items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* DU */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-[220px] justify-start text-left font-normal",
+                          !dateFrom && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateFrom
+                          ? format(dateFrom, "PPP", { locale: frCA })
+                          : "Du…"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={dateFrom}
+                        onSelect={setDateFrom}
+                        weekStartsOn={0}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  {/* AU */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-[220px] justify-start text-left font-normal",
+                          !dateTo && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateTo
+                          ? format(dateTo, "PPP", { locale: frCA })
+                          : "Au…"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={dateTo}
+                        onSelect={setDateTo}
+                        weekStartsOn={0}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const today = new Date();
+                      setDateFrom(startOfWeek(today, { weekStartsOn: 0 }));
+                      setDateTo(endOfWeek(today, { weekStartsOn: 0 }));
+                    }}
+                  >
+                    Semaine courante
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDateFrom(undefined);
+                      setDateTo(undefined);
+                      setOnlyWithHours(false);
+                    }}
+                  >
+                    Tout
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2 md:ml-auto">
+                  <Checkbox
+                    checked={onlyWithHours}
+                    onCheckedChange={(v) => setOnlyWithHours(v === true)}
+                  />
+                  <span className="text-sm">
+                    Filtrer la liste sur la période
+                  </span>
+
+                  <span className="ml-3 text-sm text-muted-foreground">
+                    {hoursLoading ? "Calcul des heures…" : ""}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="w-full overflow-hidden flex-1 flex flex-col gap-4">
+              <section className="flex-1 overflow-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10 sticky top-0 h-4">
-                      {/* Table headers */}
                       {[
                         "Nom",
-                        "Nb. de mandats actifs",
-                        "Quota par semaine",
-                        "Nb. membres",
-                        "Client créé le",
+                        "Mandat actifs",
+                        "Quota/Semaine",
+                        "Quota/Réel",
+                        "Équipe",
                       ].map((header, i) => (
                         <th
                           scope="col"
@@ -535,6 +706,7 @@ const ClientPage = () => {
                       </th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {filtered.length === 0 && (
                       <tr>
@@ -546,10 +718,21 @@ const ClientPage = () => {
                         </td>
                       </tr>
                     )}
-                    {filtered &&
-                      filtered
-                        .sort((a: any, b: any) => a.name.localeCompare(b.name))
-                        .map((client: any) => (
+
+                    {filtered
+                      .sort((a: any, b: any) => a.name.localeCompare(b.name))
+                      .map((client: any) => {
+                        const quotaWeek = client.mandats
+                          ? client.mandats.reduce(
+                              (acc: number, mandat: any) =>
+                                acc + (mandat.quota_max || 0),
+                              0,
+                            )
+                          : 0;
+
+                        const real = hoursByClientId[String(client.id)] ?? 0;
+
+                        return (
                           <tr
                             key={client.id}
                             className="border-b text-sm last:border-b-0"
@@ -570,18 +753,21 @@ const ClientPage = () => {
                                 </span>
                               </Link>
                             </td>
+
                             <td className="p-4">{client.mandatsCount}</td>
+
                             <td className="p-4">
-                              {client.mandats &&
-                                formatHoursHuman(
-                                  client.mandats.reduce(
-                                    (acc: number, mandat: any) => {
-                                      return acc + (mandat.quota_max || 0);
-                                    },
-                                    0,
-                                  ),
-                                )}
+                              {formatHoursHuman(quotaWeek)}
                             </td>
+
+                            <td className="p-4">
+                              {hoursLoading ? (
+                                <span className="text-muted-foreground">…</span>
+                              ) : (
+                                formatHoursHuman(real)
+                              )}
+                            </td>
+
                             <td className="p-4">
                               {client.membersCount > 0 ? (
                                 <HoverCard>
@@ -611,13 +797,10 @@ const ClientPage = () => {
                                   </HoverCardContent>
                                 </HoverCard>
                               ) : (
-                                // Aucun membre => on affiche 0 sans hover
                                 <span className="text-muted-foreground">0</span>
                               )}
                             </td>
-                            <td className="p-4">
-                              {new Date(client.created_at).toLocaleDateString()}
-                            </td>
+
                             <td className="p-4 flex gap-2 items-center">
                               <EditClientDialog
                                 clientId={client.id}
@@ -626,10 +809,7 @@ const ClientPage = () => {
                                   setClients((prev) =>
                                     prev.map((x: any) =>
                                       x.id === client.id
-                                        ? {
-                                            ...x,
-                                            ...patch,
-                                          }
+                                        ? { ...x, ...patch }
                                         : x,
                                     ),
                                   )
@@ -661,7 +841,6 @@ const ClientPage = () => {
                                             supabase,
                                             client.id,
                                           );
-                                          // retire de la liste locale
                                           setClients((prev) =>
                                             prev.filter(
                                               (c: any) => c.id !== client.id,
@@ -679,7 +858,8 @@ const ClientPage = () => {
                               </AlertDialog>
                             </td>
                           </tr>
-                        ))}
+                        );
+                      })}
                   </tbody>
                 </table>
               </section>

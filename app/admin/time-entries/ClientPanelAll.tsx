@@ -525,8 +525,7 @@ export default function ClientPanelAll({
                       </div>
                     </td>
                     <td className="p-2 text-right">
-                      {s.totalHours.toFixed(2)} (
-                      {formatHoursHuman(s.totalHours)})
+                      {s.totalHours.toFixed(2)}
                     </td>
                     <td className="p-2 text-right">{s.entryCount}</td>
                     <td className="p-2 text-center">{statusNode}</td>
@@ -645,8 +644,7 @@ export default function ClientPanelAll({
               <td className="p-2" />
               <td className="p-2 text-right">Total des heures</td>
               <td className="p-2 text-right">
-                {totalHoursAllEmployees.toFixed(2)} (
-                {formatHoursHuman(totalHoursAllEmployees)})
+                {totalHoursAllEmployees.toFixed(2)}
               </td>
               <td className="p-2 text-right" colSpan={3} />
             </tr>

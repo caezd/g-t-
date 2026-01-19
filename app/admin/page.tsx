@@ -20,186 +20,184 @@ import { Badge } from "@/components/ui/badge";
 // Helpers format
 // -------------------------------------------------
 function fmtMoney(n: number | null | undefined, currency = "CAD") {
-    if (n == null || Number.isNaN(n)) return "—";
-    return new Intl.NumberFormat("fr-CA", {
-        style: "currency",
-        currency,
-    }).format(n);
+  if (n == null || Number.isNaN(n)) return "—";
+  return new Intl.NumberFormat("fr-CA", {
+    style: "currency",
+    currency,
+  }).format(n);
 }
 
 function fmtHours(n: number | null | undefined) {
-    if (n == null || Number.isNaN(n)) return "—";
-    return `${n.toFixed(2)} h`;
+  if (n == null || Number.isNaN(n)) return "—";
+  return `${n.toFixed(2)} h`;
 }
 
 function fmtMinsToH(mins: number | null | undefined) {
-    if (!mins && mins !== 0) return "—";
-    return fmtHours((mins as number) / 60);
+  if (!mins && mins !== 0) return "—";
+  return fmtHours((mins as number) / 60);
 }
 
 // -------------------------------------------------
 // Périodes (Lundi->Dimanche, timezone projet approximée)
 // -------------------------------------------------
 function getBounds() {
-    const now = new Date();
-    const monthStart = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0)
-    );
-    const nextMonth = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0)
-    );
-    const monthEnd = new Date(nextMonth.getTime() - 1);
-    // Lundi comme début de semaine
-    const day = now.getUTCDay(); // 0=dimanche, 1=lundi, ...
-    const diffToMonday = (day + 6) % 7; // nombre de jours à reculer pour lundi
-    const monday = new Date(
-        Date.UTC(
-            now.getUTCFullYear(),
-            now.getUTCMonth(),
-            now.getUTCDate(),
-            0,
-            0,
-            0
-        )
-    );
-    monday.setUTCDate(monday.getUTCDate() - diffToMonday);
-    const sundayEnd = new Date(monday);
-    sundayEnd.setUTCDate(sundayEnd.getUTCDate() + 7);
-    sundayEnd.setUTCSeconds(sundayEnd.getUTCSeconds() - 1);
-    return {
-        weekStartISO: monday.toISOString(),
-        weekEndISO: sundayEnd.toISOString(),
-        monthStartISO: monthStart.toISOString(),
-        monthEndISO: monthEnd.toISOString(),
-    };
+  const now = new Date();
+  const monthStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0),
+  );
+  const nextMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0),
+  );
+  const monthEnd = new Date(nextMonth.getTime() - 1);
+  // Lundi comme début de semaine
+  const day = now.getUTCDay(); // 0=dimanche, 1=lundi, ...
+  const diffToMonday = (day + 6) % 7; // nombre de jours à reculer pour lundi
+  const monday = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      0,
+      0,
+      0,
+    ),
+  );
+  monday.setUTCDate(monday.getUTCDate() - diffToMonday);
+  const sundayEnd = new Date(monday);
+  sundayEnd.setUTCDate(sundayEnd.getUTCDate() + 7);
+  sundayEnd.setUTCSeconds(sundayEnd.getUTCSeconds() - 1);
+  return {
+    weekStartISO: monday.toISOString(),
+    weekEndISO: sundayEnd.toISOString(),
+    monthStartISO: monthStart.toISOString(),
+    monthEndISO: monthEnd.toISOString(),
+  };
 }
 
 // -------------------------------------------------
 // Types légers
 // -------------------------------------------------
 interface Client {
-    id: number;
-    name: string;
-    clients_mandats: ClientMandat[];
-    clients_team: ClientTeam[];
+  id: number;
+  name: string;
+  clients_mandats: ClientMandat[];
+  clients_team: ClientTeam[];
 }
 interface ClientTeam {
-    client_id: number;
-    quota_max: number | null;
-    deleted_at: string | null;
+  client_id: number;
+  quota_max: number | null;
+  deleted_at: string | null;
 }
 interface ClientMandat {
-    client_id: number;
-    mandat_type_id: number;
-    amount: number | null;
-    quota_max: number | null;
-    deleted_at: string | null;
+  client_id: number;
+  mandat_type_id: number;
+  amount: number | null;
+  quota_max: number | null;
+  deleted_at: string | null;
 }
 interface MandatType {
-    id: number;
-    billing_type: "hourly" | "monthly" | string;
+  id: number;
+  billing_type: "hourly" | "monthly" | string;
 }
 interface TimeEntry {
-    client_id: number;
-    doc: string; // timestamptz iso
-    deleted_at: string | null;
-    minutes?: number | null;
-    duration_min?: number | null;
-    hours?: number | null; // décimal
+  client_id: number;
+  doc: string; // timestamptz iso
+  deleted_at: string | null;
+  minutes?: number | null;
+  duration_min?: number | null;
+  hours?: number | null; // décimal
 }
 interface ClientTeam {
-    id?: number;
-    client_id: number;
-    user_id?: string | number;
-    role?: TeamRole | null;
-    quota_max: number | null;
-    deleted_at: string | null;
-    profile?: { full_name?: string | null; rate?: number | null } | null;
+  id?: number;
+  client_id: number;
+  user_id?: string | number;
+  role?: TeamRole | null;
+  quota_max: number | null;
+  deleted_at: string | null;
+  profile?: { full_name?: string | null; rate?: number | null } | null;
 }
 type TeamRole = "manager" | "assistant" | "helper";
 const ROLE_LABEL: Record<TeamRole, string> = {
-    manager: "Chargé",
-    assistant: "Adjoint",
-    helper: "Aidant",
+  manager: "Chargé",
+  assistant: "Adjoint",
+  helper: "Aidant",
 };
 
 const ROLE_WEIGHT: Record<TeamRole, number> = {
-    manager: 0, // 1er
-    assistant: 1, // 2e
-    helper: 2, // 3e
+  manager: 0, // 1er
+  assistant: 1, // 2e
+  helper: 2, // 3e
 };
 
 function getDurationMins(te: TimeEntry): number {
-    // Essaie plusieurs conventions de colonnes (minutes, duration_min, hours)
-    if (typeof te.minutes === "number" && !Number.isNaN(te.minutes))
-        return te.minutes;
-    if (typeof te.duration_min === "number" && !Number.isNaN(te.duration_min))
-        return te.duration_min;
-    if (typeof te.hours === "number" && !Number.isNaN(te.hours))
-        return te.hours * 60;
-    return 0;
+  // Essaie plusieurs conventions de colonnes (minutes, duration_min, hours)
+  if (typeof te.minutes === "number" && !Number.isNaN(te.minutes))
+    return te.minutes;
+  if (typeof te.duration_min === "number" && !Number.isNaN(te.duration_min))
+    return te.duration_min;
+  if (typeof te.hours === "number" && !Number.isNaN(te.hours))
+    return te.hours * 60;
+  return 0;
 }
 
 // -------------------------------------------------
 // Lecture & agrégation sans vues
 // -------------------------------------------------
 async function loadBible() {
-    const supabase = await createClient();
-    const { weekStartISO, weekEndISO, monthStartISO, monthEndISO } =
-        getBounds();
+  const supabase = await createClient();
+  const { weekStartISO, weekEndISO, monthStartISO, monthEndISO } = getBounds();
 
-    const { data: clients } = await supabase
-        .from<Client>("clients")
-        .select(
-            "*, clients_mandats(*, type:mandat_types!inner(description)), clients_team(*, profile:profiles!inner(*))"
-        )
-        .order("name", { ascending: true });
+  const { data: clients } = await supabase
+    .from<Client>("clients")
+    .select(
+      "*, clients_mandats(*, type:mandat_types!inner(description)), clients_team(*, profile:profiles!inner(*))",
+    )
+    .order("name", { ascending: true });
 
-    return { clients };
+  return { clients };
 }
 
 export const revalidate = 0; // SSR à chaque hit
 
 export default async function BiblePage() {
-    const { clients } = await loadBible();
+  const { clients } = await loadBible();
 
-    console.log(clients);
+  console.log(clients);
 
-    const STAT_CARDS = [
-        { label: "Clients", value: clients.length, unit: "" },
-        {
-            label: "Quota équipes",
-            value: clients.reduce(
-                (acc, client) => acc + (client.clients_team[0]?.quota_max ?? 0),
-                0
-            ),
-            unit: "h",
-        },
-        {
-            label: "Quota mandats",
-            value: clients.reduce(
-                (acc, client) =>
-                    acc + (client.clients_mandats[0]?.quota_max ?? 0),
-                0
-            ),
-            unit: "h",
-        },
-        {
-            label: "Montants mensuels",
-            value: clients.reduce(
-                (acc, client) => acc + (client.clients_mandats[0]?.amount ?? 0),
-                0
-            ),
-            unit: "$",
-            isMoney: true,
-        },
-    ];
+  const STAT_CARDS = [
+    { label: "Clients", value: clients.length, unit: "" },
+    {
+      label: "Quota équipes",
+      value: clients.reduce(
+        (acc, client) => acc + (client.clients_team[0]?.quota_max ?? 0),
+        0,
+      ),
+      unit: "h",
+    },
+    {
+      label: "Quota mandats",
+      value: clients.reduce(
+        (acc, client) => acc + (client.clients_mandats[0]?.quota_max ?? 0),
+        0,
+      ),
+      unit: "h",
+    },
+    {
+      label: "Montants mensuels",
+      value: clients.reduce(
+        (acc, client) => acc + (client.clients_mandats[0]?.amount ?? 0),
+        0,
+      ),
+      unit: "$",
+      isMoney: true,
+    },
+  ];
 
-    return (
-        <div className="flex flex-col overflow-auto w-full">
-            {/* <SearchFull /> */}
-            {/* HEADER STATS */}
-            {/* <header>
+  return (
+    <div className="flex flex-col overflow-auto w-full">
+      {/* <SearchFull /> */}
+      {/* HEADER STATS */}
+      {/* <header>
                 <div className="border-b grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                     {STAT_CARDS.map((item, i) => (
                         <div
@@ -230,247 +228,168 @@ export default async function BiblePage() {
                 </div>
             </header> */}
 
-            {/* TABLEAU DETAILLE PAR CLIENT */}
+      {/* TABLEAU DETAILLE PAR CLIENT */}
 
-            <section className="border-zinc-200 dark:border-zinc-800 w-full">
-                <div className="mt-4">
-                    <div
-                        role="table"
-                        className="border grid [grid-template-columns:minmax(14rem,1.3fr)_repeat(2,10rem)_repeat(2,12rem)_repeat(2,10rem)_repeat(2,10rem)] text-sm overflow-auto"
-                    >
-                        {/* En-tête */}
-                        <div
-                            role="row"
-                            className="contents bg-zinc-50 dark:bg-zinc-900/40 font-medium divide-x divide-y"
+      <section className="w-full">
+        <div className="mt-4">
+          <div
+            role="table"
+            className="border grid [grid-template-columns:minmax(14rem,1.3fr)_repeat(2,10rem)_repeat(2,12rem)_repeat(2,10rem)_repeat(2,10rem)] text-sm overflow-auto divide-y"
+          >
+            {/* En-tête */}
+            <div
+              role="row"
+              className="contents font-medium divide-x divide-y divide-zinc-50"
+            >
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+                Client/Mandat
+              </div>
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+                Quota (h)
+              </div>
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+                Taux ($)
+              </div>
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+                Coûtant ($)
+              </div>
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+                Taux horaire (mandats)
+              </div>
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+                Temps semaine
+              </div>
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+                Temps mois
+              </div>
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+                Écart semaine
+              </div>
+              <div
+                role="columnheader"
+                className="px-4 py-3 bg-zinc-300 border-b border-zinc-50"
+              >
+                Écart mois
+              </div>
+            </div>
+
+            {/* Lignes */}
+            {clients.map((r) => (
+              <div key={r.id} className="contents divide-x bg-zinc-300">
+                {/* Ligne principale */}
+                <div className="px-4 py-3 font-medium col-span-10 bg-zinc-400">
+                  {r.name}
+                </div>
+
+                {/* Sous-ligne alignée (subgrid) */}
+                {r.clients_mandats && (
+                  <div className="col-span-9 grid grid-cols-subgrid  divide-x divide-zinc-300 text-sm">
+                    {/* cellule 1 (indent + label) */}
+                    {r.clients_mandats.map((mandat, idx) => {
+                      return (
+                        <Fragment
+                          key={
+                            mandat.id ??
+                            `${r.client_id}-${mandat.mandat_type_id}-${idx}`
+                          }
                         >
-                            <div role="columnheader" className="px-4 py-3">
-                                Client/Mandat
-                            </div>
-                            <div role="columnheader" className="px-4 py-3">
-                                Quota (h)
-                            </div>
-                            <div role="columnheader" className="px-4 py-3">
-                                Taux ($)
-                            </div>
-                            <div role="columnheader" className="px-4 py-3">
-                                Coûtant ($)
-                            </div>
-                            <div role="columnheader" className="px-4 py-3">
-                                Taux horaire (mandats)
-                            </div>
-                            <div role="columnheader" className="px-4 py-3">
-                                Temps semaine
-                            </div>
-                            <div role="columnheader" className="px-4 py-3">
-                                Temps mois
-                            </div>
-                            <div role="columnheader" className="px-4 py-3">
-                                Écart semaine
-                            </div>
-                            <div role="columnheader" className="px-4 py-3">
-                                Écart mois
-                            </div>
+                          <div className="px-4 py-2 flex items-center gap-2 pl-8">
+                            <CornerDownRight className="inline" size={16} />
+                            <span className="text-muted-foreground">
+                              {mandat.type.description}
+                            </span>
+                          </div>
+                          {/* Les 8 autres colonnes restent alignées */}
+                          <div className="py-2">
+                            {mandat.quota_max ?? 0} h
+                            {mandat.quota_max -
+                              r.clients_team.reduce(
+                                (acc, m) => acc + (m.quota_max ?? 0),
+                                0,
+                              ) <
+                              0 && (
+                              <span
+                                className={cn("ml-1 text-red-500 font-medium")}
+                              >
+                                (
+                                <>
+                                  {r.clients_team.reduce(
+                                    (acc, m) => acc + (m.quota_max ?? 0),
+                                    0,
+                                  )}
+                                </>
+                                )
+                              </span>
+                            )}
+                          </div>
+                          <div className="py-2">{/* détail col 3 */}</div>
+                          <div className="py-2">
+                            {r.clients_team.reduce(
+                              (acc, m) =>
+                                acc +
+                                (m.quota_max ?? 0) * (m.profile?.rate ?? 0),
+                              0,
+                            )}{" "}
+                            $
+                          </div>
+                          <div className="py-2">{/* détail col 5 */}</div>
+                          <div className="py-2">{/* détail col 6 */}</div>
+                          <div className="py-2">{/* détail col 7 */}</div>
+                          <div className="py-2">{/* détail col 8 */}</div>
+                          <div className="py-2">{/* détail col 9 */}</div>
+                        </Fragment>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="col-span-9 grid grid-cols-subgrid text-xs gap-px">
+                  {(() => {
+                    const teamSorted = [...(r.clients_team ?? [])].sort(
+                      (a, b) =>
+                        (ROLE_WEIGHT[a.role as TeamRole] ?? 99) -
+                        (ROLE_WEIGHT[b.role as TeamRole] ?? 99),
+                    );
+                    return teamSorted.map((m, idx) => (
+                      <div
+                        key={m.id ?? `${r.id}-t-${m.user_id}-${idx}`}
+                        className="contents"
+                      >
+                        {/* Colonne 1 : nom de l’employé (ou user_id), indenté */}
+                        <div className="px-4 pb-3 flex items-center gap-2">
+                          <Badge>{m.role ? ROLE_LABEL[m.role] : "—"}</Badge>
+                          <span className=" text-muted-foreground">
+                            {m.profile?.full_name ??
+                              `Employé #${m.user_id ?? idx + 1}`}
+                          </span>
                         </div>
 
-                        {/* Lignes */}
-                        {clients.map((r) => (
-                            <div key={r.id} className="contents divide-x">
-                                {/* Ligne principale */}
-                                <div className="px-4 py-3 font-medium">
-                                    {r.name}
-                                </div>
-                                <div className="px-4 py-3">
-                                    {/* quota équipes */}
-                                </div>
-                                <div className="px-4 py-3">
-                                    {/* quota mandats */}
-                                </div>
-                                <div className="px-4 py-3">
-                                    {/* $ mensuel */}
-                                </div>
-                                <div className="px-4 py-3">
-                                    {/* $ horaire */}
-                                </div>
-                                <div className="px-4 py-3">
-                                    {/* t. semaine */}
-                                </div>
-                                <div className="px-4 py-3">{/* t. mois */}</div>
-                                <div className="px-4 py-3">
-                                    {/* écart sem. */}
-                                </div>
-                                <div className="px-4 py-3">
-                                    {/* écart mois */}
-                                </div>
-
-                                {/* Sous-ligne alignée (subgrid) */}
-                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/20 divide-x text-sm">
-                                    {/* cellule 1 (indent + label) */}
-                                    {r.clients_mandats &&
-                                        r.clients_mandats.map((mandat, idx) => {
-                                            return (
-                                                <Fragment
-                                                    key={
-                                                        mandat.id ??
-                                                        `${r.client_id}-${mandat.mandat_type_id}-${idx}`
-                                                    }
-                                                >
-                                                    <div className="px-4 pb-4 flex items-center gap-2 pl-8">
-                                                        <CornerDownRight
-                                                            className="inline"
-                                                            size={16}
-                                                        />
-                                                        <span className="text-muted-foreground">
-                                                            {
-                                                                mandat.type
-                                                                    .description
-                                                            }
-                                                        </span>
-                                                    </div>
-                                                    {/* Les 8 autres colonnes restent alignées */}
-                                                    <div className="pb-4">
-                                                        {mandat.quota_max ?? 0}
-                                                        {mandat.quota_max -
-                                                            r.clients_team.reduce(
-                                                                (acc, m) =>
-                                                                    acc +
-                                                                    (m.quota_max ??
-                                                                        0),
-                                                                0
-                                                            ) <
-                                                            0 && (
-                                                            <span
-                                                                className={cn(
-                                                                    "ml-1 text-red-500 font-medium"
-                                                                )}
-                                                            >
-                                                                (
-                                                                <>
-                                                                    {r.clients_team.reduce(
-                                                                        (
-                                                                            acc,
-                                                                            m
-                                                                        ) =>
-                                                                            acc +
-                                                                            (m.quota_max ??
-                                                                                0),
-                                                                        0
-                                                                    )}
-                                                                </>
-                                                                )
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="pb-4">
-                                                        {/* détail col 3 */}
-                                                    </div>
-                                                    <div className="pb-4">
-                                                        {r.clients_team.reduce(
-                                                            (acc, m) =>
-                                                                acc +
-                                                                (m.quota_max ??
-                                                                    0) *
-                                                                    (m.profile
-                                                                        ?.rate ??
-                                                                        0),
-                                                            0
-                                                        )}{" "}
-                                                        $
-                                                    </div>
-                                                    <div className="pb-4">
-                                                        {/* détail col 5 */}
-                                                    </div>
-                                                    <div className="pb-4">
-                                                        {/* détail col 6 */}
-                                                    </div>
-                                                    <div className="pb-4">
-                                                        {/* détail col 7 */}
-                                                    </div>
-                                                    <div className="pb-4">
-                                                        {/* détail col 8 */}
-                                                    </div>
-                                                    <div className="pb-4">
-                                                        {/* détail col 9 */}
-                                                    </div>
-                                                </Fragment>
-                                            );
-                                        })}
-                                </div>
-                                <div className="col-span-9 grid grid-cols-subgrid bg-zinc-50/40 dark:bg-zinc-900/10 divide-x text-xs">
-                                    {(() => {
-                                        const teamSorted = [
-                                            ...(r.clients_team ?? []),
-                                        ].sort(
-                                            (a, b) =>
-                                                (ROLE_WEIGHT[
-                                                    a.role as TeamRole
-                                                ] ?? 99) -
-                                                (ROLE_WEIGHT[
-                                                    b.role as TeamRole
-                                                ] ?? 99)
-                                        );
-                                        return teamSorted.map((m, idx) => (
-                                            <div
-                                                key={
-                                                    m.id ??
-                                                    `${r.id}-t-${m.user_id}-${idx}`
-                                                }
-                                                className="contents"
-                                            >
-                                                {/* Colonne 1 : nom de l’employé (ou user_id), indenté */}
-                                                <div className="px-4 pb-3 flex items-center gap-2">
-                                                    <Badge>
-                                                        {m.role
-                                                            ? ROLE_LABEL[m.role]
-                                                            : "—"}
-                                                    </Badge>
-                                                    <span className=" text-muted-foreground">
-                                                        {m.profile?.full_name ??
-                                                            `Employé #${
-                                                                m.user_id ??
-                                                                idx + 1
-                                                            }`}
-                                                    </span>
-                                                </div>
-
-                                                {/* Colonnes 2..9 alignées (exemples) */}
-                                                <div className="pb-3">
-                                                    {/* Quota équipes (par employé) */}
-                                                    <span className="text-xs">
-                                                        {m.quota_max ?? 0} h
-                                                    </span>
-                                                </div>
-                                                <div className="pb-3">
-                                                    {m.profile?.rate ?? 0}
-                                                </div>
-                                                <div className="pb-3">
-                                                    {m.quota_max *
-                                                        m.profile?.rate}{" "}
-                                                    $
-                                                </div>
-                                                <div className="pb-3">
-                                                    {/* $ horaire (n/a employé) */}
-                                                </div>
-                                                <div className="pb-3">
-                                                    {/* Temps semaine (si tu veux filtrer par user_id plus tard) */}
-                                                </div>
-                                                <div className="pb-3">
-                                                    {/* Temps mois */}
-                                                </div>
-                                                <div className="pb-3">
-                                                    {/* Écart semaine */}
-                                                </div>
-                                                <div className="pb-3">
-                                                    {/* Écart mois */}
-                                                </div>
-                                            </div>
-                                        ));
-                                    })()}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                        {/* Colonnes 2..9 alignées (exemples) */}
+                        <div className="pb-3">
+                          {/* Quota équipes (par employé) */}
+                          <span className="text-xs">{m.quota_max ?? 0} h</span>
+                        </div>
+                        <div className="pb-3">{m.profile?.rate ?? 0}</div>
+                        <div className="pb-3">
+                          {m.quota_max * m.profile?.rate} $
+                        </div>
+                        <div className="pb-3">
+                          {/* $ horaire (n/a employé) */}
+                        </div>
+                        <div className="pb-3">
+                          {/* Temps semaine (si tu veux filtrer par user_id plus tard) */}
+                        </div>
+                        <div className="pb-3">{/* Temps mois */}</div>
+                        <div className="pb-3">{/* Écart semaine */}</div>
+                        <div className="pb-3">{/* Écart mois */}</div>
+                      </div>
+                    ));
+                  })()}
                 </div>
-            </section>
+              </div>
+            ))}
+          </div>
         </div>
-    );
+      </section>
+    </div>
+  );
 }

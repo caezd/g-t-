@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useReducer, Fragment } from "react";
 
 import {
   Dialog,
@@ -55,7 +55,18 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { CalendarIcon } from "lucide-react";
+import { Hint } from "@/components/hint";
+
+import type { DateRange } from "react-day-picker";
+
+import {
+  CalendarIcon,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  X,
+  CornerDownRight,
+} from "lucide-react";
 import { format, startOfWeek, endOfWeek } from "date-fns";
 import { frCA } from "date-fns/locale";
 
@@ -68,6 +79,7 @@ import { SearchFull } from "@/components/search-full";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { toHoursDecimal, formatHoursHuman } from "@/utils/date";
+import { translateMandatCode } from "@/utils/codes";
 
 // ------------------------
 // Helpers quota_max
@@ -89,6 +101,25 @@ function canonicalizeQuotaInput(raw: string): string {
   if (!Number.isFinite(dec)) return raw; // laisse l'erreur au validateur
   return decimalToHhMm(dec);
 }
+
+function formatDateCA(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+function formatRangeCA(from: Date, to: Date): string {
+  return `du ${formatDateCA(from)} au ${formatDateCA(to)}`;
+}
+
+function ymdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 // Normalise: minuscules + supprime accents + trim
 const norm = (s: unknown) =>
   String(s ?? "")
@@ -434,10 +465,176 @@ async function softDeleteClient(
   if (e2) throw e2;
 }
 
+type SortDir = "asc" | "desc";
+type SortKey =
+  | "name"
+  | "mandatsCount"
+  | "quotaWeek"
+  | "assignedHours"
+  | "remainWeek"
+  | "remainMonth"
+  | "remain3"
+  | "remainRange"
+  | "membersCount";
+type SortState = { key: SortKey; dir: SortDir };
+
+const COLUMNS = [
+  { id: "name", label: "Nom", sortKey: "name" },
+  { id: "quota_week", label: "Prévision", sortKey: "quotaWeek" },
+  { id: "assigned_hours", label: "Assigné", sortKey: "assignedHours" },
+  {
+    id: "week",
+    label: "Heures réelles",
+    subtitle: "7 derniers jours",
+    hint: "Selon les entrées de temps des membres de l'équipe.",
+    sortKey: "remainWeek",
+  },
+  {
+    id: "month",
+    label: "Heures réelles",
+    subtitle: "30 derniers jours",
+    hint: "Selon les entrées de temps des membres de l'équipe.",
+    sortKey: "remainMonth",
+  },
+  { id: "team", label: "Équipe", sortKey: "membersCount" },
+  { id: "actions", label: "", className: "w-0", srOnlyLabel: "Actions" },
+] as const;
+
+type Column =
+  | (typeof COLUMNS)[number]
+  | {
+      id: string;
+      label: string;
+      sortKey?: SortKey;
+      subtitle?: string;
+      hint?: string;
+      className?: string;
+      srOnlyLabel?: string;
+    };
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ArrowUpDown className="h-4 w-4 opacity-60" />;
+  return dir === "asc" ? (
+    <ArrowUp className="h-4 w-4" />
+  ) : (
+    <ArrowDown className="h-4 w-4" />
+  );
+}
+
+function HeaderCell({
+  col,
+  active,
+  dir,
+  onSort,
+}: {
+  col: Column;
+  active: boolean;
+  dir: SortDir;
+  onSort?: () => void;
+}) {
+  const ariaSort = !col.sortKey
+    ? "none"
+    : active
+      ? dir === "asc"
+        ? "ascending"
+        : "descending"
+      : "none";
+
+  if (!col.sortKey) {
+    return (
+      <th
+        className={cn("px-3 py-2 whitespace-nowrap w-max", col.className)}
+        aria-sort={ariaSort as any}
+      >
+        {col.label ? (
+          <div className="flex flex-col">
+            <div className="inline-flex items-center gap-2">
+              <span className="whitespace-nowrap">{col.label}</span>
+              {col.hint && <Hint content={col.hint} />}
+            </div>
+            {col.subtitle && <span className="text-xs">{col.subtitle}</span>}
+          </div>
+        ) : (
+          <span className="sr-only">{col.srOnlyLabel ?? "Colonne"}</span>
+        )}
+      </th>
+    );
+  }
+
+  return (
+    <th
+      className={cn(
+        "px-2 py-1 cursor-pointer select-none whitespace-nowrap w-max align-middle",
+        col.className,
+      )}
+      aria-sort={ariaSort as any}
+      onClick={onSort}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onSort?.();
+      }}
+    >
+      <div className=" px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+        <div className="flex flex-col">
+          <div className="inline-flex items-center gap-2">
+            {col.hint && <Hint content={col.hint} />}
+            <span className="whitespace-nowrap">{col.label}</span>
+            <SortIcon active={active} dir={dir} />
+          </div>
+          {col.subtitle && (
+            <div className="text-xs flex justify-center">{col.subtitle}</div>
+          )}
+        </div>
+      </div>
+    </th>
+  );
+}
+
 const ClientPage = () => {
   const supabase = useMemo(() => createClient(), []);
   const [clients, setClients] = useState<any[]>([]);
   const [q, setQ] = useState("");
+
+  // --- Filtre de plage (Heures réelles) ---
+  const [realRange, setRealRange] = useState<DateRange | undefined>(undefined);
+  const hasRealRange = Boolean(realRange?.from && realRange?.to);
+
+  const realRangeSubtitle = useMemo(() => {
+    if (!realRange?.from || !realRange?.to) return "";
+    return formatRangeCA(realRange.from, realRange.to);
+  }, [realRange?.from, realRange?.to]);
+
+  const [hideArchived, setHideArchived] = useState(true);
+
+  const columns = useMemo<Column[]>(() => {
+    if (!hasRealRange) return COLUMNS as unknown as Column[];
+
+    return [
+      COLUMNS[0],
+      COLUMNS[1],
+      COLUMNS[2],
+      {
+        id: "range",
+        label: "Heures réelles",
+        subtitle: realRangeSubtitle,
+        hint: "Selon les entrées de temps des membres de l'équipe.",
+        sortKey: "remainRange",
+      },
+      COLUMNS[6],
+      COLUMNS[7],
+    ];
+  }, [hasRealRange, realRangeSubtitle]);
+
+  const [sort, dispatchSort] = useReducer(
+    (s: SortState, a: { key: SortKey }): SortState =>
+      s.key === a.key
+        ? { key: s.key, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { key: a.key, dir: a.key === "name" ? "asc" : "desc" },
+    { key: "name", dir: "asc" },
+  );
+
+  const onSortClick = (key: SortKey) => dispatchSort({ key });
 
   // --- Filtre dates (shadcn Calendar) ---
   const [dateFrom, setDateFrom] = useState<Date | undefined>(
@@ -456,6 +653,40 @@ const ClientPage = () => {
   const [hoursLoading, setHoursLoading] = useState(false);
 
   const toISODate = (d?: Date) => (d ? format(d, "yyyy-MM-dd") : null);
+
+  type ClientCompleted = {
+    weekMin: number;
+    monthMin: number;
+    m3Min: number;
+    weeksMonth: number;
+    weeks3: number;
+  };
+
+  const [completedByClientId, setCompletedByClientId] = useState<
+    Record<string, ClientCompleted>
+  >({});
+  const [completedLoading, setCompletedLoading] = useState(false);
+
+  type ClientRange = {
+    rangeMin: number;
+    weeksRange: number;
+  };
+
+  const [rangeByClientId, setRangeByClientId] = useState<
+    Record<string, ClientRange>
+  >({});
+  const [rangeLoading, setRangeLoading] = useState(false);
+
+  type MandatCompleted = { weekMin: number; monthMin: number; m3Min: number };
+  type MandatRange = { rangeMin: number };
+
+  const [completedByMandatKey, setCompletedByMandatKey] = useState<
+    Record<string, MandatCompleted>
+  >({});
+
+  const [rangeByMandatKey, setRangeByMandatKey] = useState<
+    Record<string, MandatRange>
+  >({});
 
   useEffect(() => {
     const fetchClients = async () => {
@@ -476,7 +707,8 @@ const ClientPage = () => {
                 full_name,
                 email
               )
-            )`,
+            ),
+            clients_team(*)`,
         )
         .is("mandats_count.deleted_at", null)
         .is("mandats.deleted_at", null);
@@ -549,8 +781,312 @@ const ClientPage = () => {
       list = list.filter((c: any) => (hoursByClientId[String(c.id)] ?? 0) > 0);
     }
 
+    if (hideArchived) {
+      list = list.filter((c: any) => !c.deleted_at);
+    }
+
     return list;
-  }, [q, clients, onlyWithHours, hoursByClientId]);
+  }, [q, clients, onlyWithHours, hoursByClientId, hideArchived]);
+
+  type DecoratedClient = {
+    client: any;
+    quotaWeek: number;
+    assignedHours: number;
+    realHours: number;
+    remainWeekMin: number;
+    remainMonthMin: number;
+    remainM3Min: number;
+    remainRangeMin: number;
+  };
+
+  const decoratedClients: DecoratedClient[] = useMemo(() => {
+    return filtered.map((client: any) => {
+      const quotaWeekHours = client.mandats
+        ? client.mandats.reduce(
+            (acc: number, mandat: any) => acc + (mandat.quota_max || 0),
+            0,
+          )
+        : 0;
+      const assignedHours = Array.isArray(client.clients_team)
+        ? client.clients_team.reduce((acc: number, row: any) => {
+            const v = Number(row?.quota_max ?? 0);
+            return acc + (Number.isFinite(v) ? v : 0);
+          }, 0)
+        : 0;
+
+      const quotaWeekMin = Math.round(quotaWeekHours * 60);
+
+      const comp = completedByClientId[String(client.id)] ?? {
+        weekMin: 0,
+        monthMin: 0,
+        m3Min: 0,
+        weeksMonth: 0,
+        weeks3: 0,
+      };
+
+      const quotaMonthMin = quotaWeekMin * comp.weeksMonth;
+      const quotaM3Min = quotaWeekMin * comp.weeks3;
+
+      const range = rangeByClientId[String(client.id)] ?? {
+        rangeMin: 0,
+        weeksRange: 0,
+      };
+      const quotaRangeMin = quotaWeekMin * (range.weeksRange ?? 0);
+      const remainRangeMin = quotaRangeMin - (range.rangeMin ?? 0);
+
+      return {
+        client,
+        quotaWeek: quotaWeekHours,
+        assignedHours,
+        realHours: hoursByClientId[String(client.id)] ?? 0,
+        remainWeekMin: quotaWeekMin - comp.weekMin,
+        remainMonthMin: quotaMonthMin - comp.monthMin,
+        remainM3Min: quotaM3Min - comp.m3Min,
+        remainRangeMin,
+      };
+    });
+  }, [filtered, hoursByClientId, completedByClientId, rangeByClientId]);
+
+  const sortedClients = useMemo(() => {
+    const dirMul = sort.dir === "asc" ? 1 : -1;
+
+    const cmpNum = (a: number, b: number) => (a - b) * dirMul;
+    const cmpStr = (a: string, b: string) => a.localeCompare(b, "fr") * dirMul;
+
+    const arr = [...decoratedClients];
+
+    arr.sort((A, B) => {
+      let primary = 0;
+
+      switch (sort.key) {
+        case "name":
+          primary = cmpStr(
+            String(A.client.name ?? ""),
+            String(B.client.name ?? ""),
+          );
+          break;
+        case "quotaWeek":
+          primary = cmpNum(A.quotaWeek, B.quotaWeek);
+          break;
+        case "assignedHours":
+          primary = cmpNum(A.assignedHours, B.assignedHours);
+          break;
+        case "membersCount":
+          primary = cmpNum(
+            Number(A.client.membersCount ?? 0),
+            Number(B.client.membersCount ?? 0),
+          );
+          break;
+        case "remainWeek":
+          primary = cmpNum(A.remainWeekMin, B.remainWeekMin);
+          break;
+        case "remainMonth":
+          primary = cmpNum(A.remainMonthMin, B.remainMonthMin);
+          break;
+        case "remain3":
+          primary = cmpNum(A.remainM3Min, B.remainM3Min);
+          break;
+        case "remainRange":
+          primary = cmpNum(A.remainRangeMin, B.remainRangeMin);
+          break;
+
+        default:
+          primary = 0;
+      }
+
+      if (primary !== 0) return primary;
+
+      // Tie-breaker stable (toujours par nom asc)
+      return String(A.client.name ?? "").localeCompare(
+        String(B.client.name ?? ""),
+        "fr",
+      );
+    });
+
+    return arr;
+  }, [decoratedClients, sort]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!clients.length) return setCompletedByClientId({});
+
+      const clientIds = clients
+        .map((c: any) => Number(c.id))
+        .filter(Number.isFinite);
+      const as_of = format(new Date(), "yyyy-MM-dd");
+
+      const { data, error } = await supabase.rpc(
+        "admin_client_billed_totals_completed",
+        {
+          client_ids: clientIds,
+          as_of,
+          tz: "America/Montreal",
+        },
+      );
+
+      if (error) {
+        console.error("rpc admin_client_billed_totals_completed error", error);
+        setCompletedByClientId({});
+        return;
+      }
+
+      const map: Record<string, ClientCompleted> = {};
+      for (const row of data ?? []) {
+        const id = String((row as any).client_id);
+        map[id] = {
+          weekMin: Number((row as any).billed_week_min ?? 0),
+          monthMin: Number((row as any).billed_month_min ?? 0),
+          m3Min: Number((row as any).billed_3months_min ?? 0),
+          weeksMonth: Number((row as any).weeks_in_prev_month ?? 0),
+          weeks3: Number((row as any).weeks_in_prev_3months ?? 0),
+        };
+      }
+      setCompletedByClientId(map);
+    };
+
+    run();
+  }, [supabase, clients]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!clients.length) return setCompletedByMandatKey({});
+
+      const clientIds = clients
+        .map((c: any) => Number(c.id))
+        .filter(Number.isFinite);
+      const as_of = format(new Date(), "yyyy-MM-dd");
+
+      const { data, error } = await supabase.rpc(
+        "admin_client_mandat_billed_totals_completed",
+        { client_ids: clientIds, as_of, tz: "America/Montreal" },
+      );
+
+      if (error) {
+        console.error(
+          "rpc admin_client_mandat_billed_totals_completed error",
+          error,
+        );
+        setCompletedByMandatKey({});
+        return;
+      }
+
+      const map: Record<string, MandatCompleted> = {};
+      for (const row of data ?? []) {
+        const k = `${String((row as any).client_id)}:${String((row as any).mandat_id)}`;
+        map[k] = {
+          weekMin: Number((row as any).billed_week_min ?? 0),
+          monthMin: Number((row as any).billed_month_min ?? 0),
+          m3Min: Number((row as any).billed_3months_min ?? 0),
+        };
+      }
+      setCompletedByMandatKey(map);
+    };
+
+    run();
+  }, [supabase, clients]);
+
+  // --- Heures facturées sur une plage (RPC) ---
+  useEffect(() => {
+    const run = async () => {
+      if (!hasRealRange || !realRange?.from || !realRange?.to) {
+        setRangeByClientId({});
+        setRangeLoading(false);
+        return;
+      }
+      if (!clients.length) {
+        setRangeByClientId({});
+        setRangeLoading(false);
+        return;
+      }
+
+      setRangeLoading(true);
+
+      const clientIds = clients
+        .map((c: any) => Number(c.id))
+        .filter(Number.isFinite);
+
+      const range_start = ymdLocal(realRange.from);
+      const range_end = ymdLocal(realRange.to);
+
+      const { data, error } = await supabase.rpc(
+        "admin_client_billed_totals_range",
+        {
+          client_ids: clientIds,
+          range_start,
+          range_end,
+          tz: "America/Montreal",
+        },
+      );
+
+      if (error) {
+        console.error("rpc admin_client_billed_totals_range error", error);
+        setRangeByClientId({});
+        setRangeLoading(false);
+        return;
+      }
+
+      const map: Record<string, ClientRange> = {};
+      for (const row of data ?? []) {
+        const id = String((row as any).client_id);
+        map[id] = {
+          rangeMin: Number((row as any).billed_range_min ?? 0),
+          weeksRange: Number((row as any).weeks_in_range ?? 0),
+        };
+      }
+
+      setRangeByClientId(map);
+      setRangeLoading(false);
+    };
+
+    run();
+  }, [supabase, clients, hasRealRange, realRange?.from, realRange?.to]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!hasRealRange || !realRange?.from || !realRange?.to) {
+        setRangeByMandatKey({});
+        return;
+      }
+      if (!clients.length) {
+        setRangeByMandatKey({});
+        return;
+      }
+
+      const clientIds = clients
+        .map((c: any) => Number(c.id))
+        .filter(Number.isFinite);
+      const range_start = ymdLocal(realRange.from);
+      const range_end = ymdLocal(realRange.to);
+
+      const { data, error } = await supabase.rpc(
+        "admin_client_mandat_billed_totals_range",
+        {
+          client_ids: clientIds,
+          range_start,
+          range_end,
+          tz: "America/Montreal",
+        },
+      );
+
+      if (error) {
+        console.error(
+          "rpc admin_client_mandat_billed_totals_range error",
+          error,
+        );
+        setRangeByMandatKey({});
+        return;
+      }
+
+      const map: Record<string, MandatRange> = {};
+      for (const row of data ?? []) {
+        const k = `${String((row as any).client_id)}:${String((row as any).mandat_id)}`;
+        map[k] = { rangeMin: Number((row as any).billed_range_min ?? 0) };
+      }
+      setRangeByMandatKey(map);
+    };
+
+    run();
+  }, [supabase, clients, hasRealRange, realRange?.from, realRange?.to]);
 
   return (
     <>
@@ -563,9 +1099,6 @@ const ClientPage = () => {
               </h1>
             </div>
             <div className="flex mt-4 md:mt-0 md:ml-4">
-              <Link href="/admin/time-entries" className="mr-2">
-                <Button variant="ghost">Rapport</Button>
-              </Link>
               <NewClientDialog
                 onCreated={(client) => setClients((prev) => [...prev, client])}
               />
@@ -579,102 +1112,55 @@ const ClientPage = () => {
               placeholder="Rechercher un client..."
             />
 
-            {/* Barre filtres dates (Calendar shadcn) */}
-            <div className="border-b px-4 py-3 flex flex-col gap-3">
-              <div className="flex flex-col md:flex-row md:items-center gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* DU */}
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-[220px] justify-start text-left font-normal",
-                          !dateFrom && "text-muted-foreground",
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {dateFrom
-                          ? format(dateFrom, "PPP", { locale: frCA })
-                          : "Du…"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={dateFrom}
-                        onSelect={setDateFrom}
-                        weekStartsOn={0}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="gap-2">
+                      <CalendarIcon className="h-4 w-4" />
+                      {hasRealRange && realRange?.from && realRange?.to
+                        ? `Plage: ${formatDateCA(realRange.from)} → ${formatDateCA(realRange.to)}`
+                        : "Plage personnalisée"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="p-2 w-auto">
+                    <Calendar
+                      mode="range"
+                      numberOfMonths={2}
+                      selected={realRange}
+                      onSelect={setRealRange}
+                      defaultMonth={realRange?.from}
+                    />
+                    <div className="px-2 pt-2 text-xs text-muted-foreground">
+                      Astuce : appuyer sur une date sélectionner permet de la
+                      remettre à zéro.
+                    </div>
+                  </PopoverContent>
+                </Popover>
 
-                  {/* AU */}
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-[220px] justify-start text-left font-normal",
-                          !dateTo && "text-muted-foreground",
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {dateTo
-                          ? format(dateTo, "PPP", { locale: frCA })
-                          : "Au…"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={dateTo}
-                        onSelect={setDateTo}
-                        weekStartsOn={0}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-
+                {hasRealRange && (
                   <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      const today = new Date();
-                      setDateFrom(startOfWeek(today, { weekStartsOn: 0 }));
-                      setDateTo(endOfWeek(today, { weekStartsOn: 0 }));
-                    }}
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setRealRange(undefined)}
+                    title="Effacer la plage"
                   >
-                    Semaine courante
+                    <X className="h-4 w-4" />
                   </Button>
+                )}
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setDateFrom(undefined);
-                      setDateTo(undefined);
-                      setOnlyWithHours(false);
-                    }}
-                  >
-                    Tout
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-2 md:ml-auto">
+                {hasRealRange && rangeLoading && (
+                  <span className="text-xs text-muted-foreground">
+                    Calcul en cours…
+                  </span>
+                )}
+                <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
                   <Checkbox
-                    checked={onlyWithHours}
-                    onCheckedChange={(v) => setOnlyWithHours(v === true)}
+                    checked={hideArchived}
+                    onCheckedChange={(v) => setHideArchived(v === true)}
                   />
-                  <span className="text-sm">
-                    Filtrer la liste sur la période
-                  </span>
-
-                  <span className="ml-3 text-sm text-muted-foreground">
-                    {hoursLoading ? "Calcul des heures…" : ""}
-                  </span>
-                </div>
+                  <span>Masquer les clients archivés</span>
+                </label>
               </div>
             </div>
 
@@ -682,36 +1168,28 @@ const ClientPage = () => {
               <section className="flex-1 overflow-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10 sticky top-0 h-4">
-                      {[
-                        "Nom",
-                        "Mandat actifs",
-                        "Quota/Semaine",
-                        "Quota/Réel",
-                        "Équipe",
-                      ].map((header, i) => (
-                        <th
-                          scope="col"
-                          key={i}
-                          className="px-3 py-2 whitespace-nowrap w-max"
-                        >
-                          {header}
-                        </th>
+                    <tr className="text-left border-b text-sm bg-zinc-300 dark:bg-zinc-800/50 sticky top-0 h-4">
+                      {columns.map((col) => (
+                        <HeaderCell
+                          key={col.id}
+                          col={col}
+                          active={!!col.sortKey && sort.key === col.sortKey}
+                          dir={sort.dir}
+                          onSort={
+                            col.sortKey
+                              ? () => onSortClick(col.sortKey)
+                              : undefined
+                          }
+                        />
                       ))}
-                      <th
-                        scope="col"
-                        className="px-3 py-2 whitespace-nowrap w-max"
-                      >
-                        <span className="sr-only">Edit</span>
-                      </th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {filtered.length === 0 && (
+                    {sortedClients.length === 0 && (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={columns.length}
                           className="py-6 px-4 text-sm text-muted-foreground"
                         >
                           Aucun résultat pour « {q} ».
@@ -719,25 +1197,86 @@ const ClientPage = () => {
                       </tr>
                     )}
 
-                    {filtered
-                      .sort((a: any, b: any) => a.name.localeCompare(b.name))
-                      .map((client: any) => {
-                        const quotaWeek = client.mandats
-                          ? client.mandats.reduce(
-                              (acc: number, mandat: any) =>
-                                acc + (mandat.quota_max || 0),
-                              0,
-                            )
-                          : 0;
+                    {sortedClients.map(({ client }, groupIndex) => {
+                      const striped = groupIndex % 2 === 1;
+                      const stripeBg = striped
+                        ? "bg-zinc-400/30 dark:bg-zinc-900/20"
+                        : "";
+                      const assignedHours = Array.isArray(client.clients_team)
+                        ? client.clients_team.reduce(
+                            (acc: number, row: any) => {
+                              const v = Number(row?.quota_max ?? 0);
+                              return acc + (Number.isFinite(v) ? v : 0);
+                            },
+                            0,
+                          )
+                        : 0;
 
-                        const real = hoursByClientId[String(client.id)] ?? 0;
+                      const quotaWeek = client.mandats
+                        ? client.mandats.reduce(
+                            (acc: number, mandat: any) =>
+                              acc + (mandat.quota_max || 0),
+                            0,
+                          )
+                        : 0;
 
-                        return (
+                      const quotaWeekHours = client.mandats
+                        ? client.mandats.reduce(
+                            (acc: number, mandat: any) =>
+                              acc + (mandat.quota_max || 0),
+                            0,
+                          )
+                        : 0;
+
+                      // quota semaine en minutes (entier)
+                      const quotaWeekMin = Math.round(quotaWeekHours * 60);
+
+                      const comp = completedByClientId[String(client.id)] ?? {
+                        weekMin: 0,
+                        monthMin: 0,
+                        m3Min: 0,
+                        weeksMonth: 0,
+                        weeks3: 0,
+                      };
+
+                      const quotaMonthMin = quotaWeekMin * comp.weeksMonth;
+                      const quotaM3Min = quotaWeekMin * comp.weeks3;
+
+                      const remainWeekMin = quotaWeekMin - comp.weekMin;
+                      const remainMonthMin = quotaMonthMin - comp.monthMin;
+                      const remainM3Min = quotaM3Min - comp.m3Min;
+
+                      const range = rangeByClientId[String(client.id)] ?? {
+                        rangeMin: 0,
+                        weeksRange: 0,
+                      };
+                      const quotaRangeMin =
+                        quotaWeekMin * (range.weeksRange ?? 0);
+                      const remainRangeMin =
+                        quotaRangeMin - (range.rangeMin ?? 0);
+
+                      const fmtMin = (min: number) =>
+                        formatHoursHuman(min / 60);
+
+                      const cellClass = (remainMin: number) =>
+                        cn(
+                          remainMin < 0
+                            ? "text-red-600 dark:text-red-300 font-medium"
+                            : remainMin > 0
+                              ? "text-green-600 dark:text-green-300 font-medium"
+                              : null,
+                        );
+
+                      return (
+                        <Fragment key={String(client.id)}>
                           <tr
                             key={client.id}
-                            className="border-b text-sm last:border-b-0"
+                            className={cn(
+                              "text-sm border-t border-zinc-300",
+                              stripeBg,
+                            )}
                           >
-                            <td className="p-4 font-medium">
+                            <td className="py-2 px-4 font-medium">
                               <Link
                                 href={`/admin/clients/${client.id}`}
                                 className={cn(
@@ -754,21 +1293,97 @@ const ClientPage = () => {
                               </Link>
                             </td>
 
-                            <td className="p-4">{client.mandatsCount}</td>
-
-                            <td className="p-4">
+                            <td className="py-2 px-4">
                               {formatHoursHuman(quotaWeek)}
                             </td>
 
-                            <td className="p-4">
-                              {hoursLoading ? (
-                                <span className="text-muted-foreground">…</span>
-                              ) : (
-                                formatHoursHuman(real)
+                            <td
+                              className={cn(
+                                "py-2 px-4",
+                                quotaWeek - assignedHours < 0
+                                  ? "text-red-600 dark:text-red-300 font-medium"
+                                  : quotaWeek - assignedHours > 0
+                                    ? "text-green-600 dark:text-green-300 font-medium"
+                                    : null, // = 0 => aucune classe de couleur
                               )}
+                            >
+                              {formatHoursHuman(assignedHours)}
                             </td>
+                            {hasRealRange ? (
+                              <td
+                                className={cn(
+                                  "py-2 px-4",
+                                  cellClass(remainRangeMin),
+                                )}
+                              >
+                                {/*rangeLoading ? (
+                                  <span className="text-muted-foreground">
+                                    …
+                                  </span>
+                                ) : (
+                                  <div className="leading-tight">
+                                    <div>
+                                      {fmtMin(remainRangeMin)} disponibles
+                                    </div>
+                                    <div className="text-xs text-muted-foreground font-normal">
+                                      fait: {fmtMin(range.rangeMin)} / quota:{" "}
+                                      {fmtMin(quotaRangeMin)}
+                                    </div>
+                                  </div>
+                                )*/}
+                              </td>
+                            ) : (
+                              <>
+                                <td
+                                  className={cn(
+                                    "py-2 px-4",
+                                    cellClass(remainWeekMin),
+                                  )}
+                                >
+                                  {/*completedLoading ? (
+                                    <span className="text-muted-foreground">
+                                      …
+                                    </span>
+                                  ) : (
+                                    <div className="leading-tight">
+                                      <div>
+                                        {fmtMin(remainWeekMin)} disponibles
+                                      </div>
+                                      <div className="text-xs text-muted-foreground font-normal">
+                                        fait: {fmtMin(comp.weekMin)} / quota:{" "}
+                                        {fmtMin(quotaWeekMin)}
+                                      </div>
+                                    </div>
+                                  )*/}
+                                </td>
 
-                            <td className="p-4">
+                                <td
+                                  className={cn(
+                                    "py-2 px-4",
+                                    cellClass(remainMonthMin),
+                                  )}
+                                >
+                                  {/*completedLoading ? (
+                                    <span className="text-muted-foreground">
+                                      …
+                                    </span>
+                                  ) : (
+                                    <div className="leading-tight">
+                                      <div>
+                                        {fmtMin(remainMonthMin)} disponibles
+                                      </div>
+                                      <div className="text-xs text-muted-foreground font-normal">
+                                        fait: {fmtMin(comp.monthMin)} / quota:{" "}
+                                        {fmtMin(quotaMonthMin)}
+                                      </div>
+                                    </div>
+                                  )*/}
+                                </td>
+                              </>
+                            )}
+
+                            <td className="py-2 px-4">
+                              {/* ton HoverCard existant inchangé */}
                               {client.membersCount > 0 ? (
                                 <HoverCard>
                                   <HoverCardTrigger asChild>
@@ -801,7 +1416,7 @@ const ClientPage = () => {
                               )}
                             </td>
 
-                            <td className="p-4 flex gap-2 items-center">
+                            <td className="py-2 px-4 flex gap-2 items-center">
                               <EditClientDialog
                                 clientId={client.id}
                                 initialName={client.name}
@@ -858,8 +1473,153 @@ const ClientPage = () => {
                               </AlertDialog>
                             </td>
                           </tr>
-                        );
-                      })}
+                          {/* sous-lignes mandats */}
+                          {(client.mandats ?? []).map((m: any) => {
+                            const mandatId = String(m.id);
+                            const k = `${String(client.id)}:${mandatId}`;
+
+                            // Quota mandat (par semaine) -> minutes
+                            const quotaWeekMin = Math.round(
+                              Number(m.quota_max ?? 0) * 60,
+                            );
+                            const quotaMonthMin =
+                              quotaWeekMin * (comp.weeksMonth ?? 0);
+                            const quotaM3Min =
+                              quotaWeekMin * (comp.weeks3 ?? 0);
+
+                            // Heures PLACÉES (assignées) sur ce mandat (clients_team)
+                            const assignedMandatHours = (
+                              client.clients_team ?? []
+                            )
+                              .filter(
+                                (r: any) => String(r.mandat_id) === mandatId,
+                              )
+                              .reduce(
+                                (acc: number, r: any) =>
+                                  acc + (Number(r.quota_max ?? 0) || 0),
+                                0,
+                              );
+                            const assignedMandatMin = Math.round(
+                              assignedMandatHours * 60,
+                            );
+
+                            // Heures FACTURÉES (time_entries) sur ce mandat
+                            const billed = completedByMandatKey[k] ?? {
+                              weekMin: 0,
+                              monthMin: 0,
+                              m3Min: 0,
+                            };
+                            const billedRangeMin =
+                              rangeByMandatKey[k]?.rangeMin ?? 0;
+
+                            // Restant (quota - facturé)
+                            const remainWeekMin = quotaWeekMin - billed.weekMin;
+                            const remainMonthMin =
+                              quotaMonthMin - billed.monthMin;
+                            const remainM3Min = quotaM3Min - billed.m3Min;
+
+                            const weeksRange = range.weeksRange ?? 0; // vient déjà de ton RPC range client
+                            const quotaRangeMin = quotaWeekMin * weeksRange;
+                            const remainRangeMin =
+                              quotaRangeMin - billedRangeMin;
+
+                            const mandatCode = m?.mandat_types?.code ?? null;
+                            const mandatLabel =
+                              mandatCode != null
+                                ? translateMandatCode(mandatCode)
+                                : `Mandat #${mandatId}`;
+
+                            return (
+                              <tr
+                                key={`${String(client.id)}:${mandatId}`}
+                                className={cn("text-xs", stripeBg)}
+                              >
+                                {/* Nom */}
+                                <td className="py-2 px-4">
+                                  <div className="pl-6 text-muted-foreground flex items-center gap-2">
+                                    <CornerDownRight
+                                      className="inline"
+                                      size={14}
+                                    />
+                                    {mandatLabel}
+                                  </div>
+                                </td>
+
+                                {/* Prévision (quota/semaine) */}
+                                <td className="py-2 px-4">
+                                  {formatHoursHuman(quotaWeekMin / 60)}
+                                </td>
+
+                                {/* Assigné (placé/semaine) */}
+                                <td className="py-2 px-4"></td>
+
+                                {/* Heures réelles (facturé) */}
+                                {hasRealRange ? (
+                                  <td
+                                    className={cn(
+                                      "py-2 px-4",
+                                      cellClass(remainRangeMin),
+                                    )}
+                                  >
+                                    <div className="leading-tight">
+                                      <div>
+                                        {fmtMin(remainRangeMin)} disponibles
+                                      </div>
+                                      <div className="text-xs text-muted-foreground font-normal">
+                                        fait: {fmtMin(billedRangeMin)} / quota:{" "}
+                                        {fmtMin(quotaRangeMin)}
+                                      </div>
+                                    </div>
+                                  </td>
+                                ) : (
+                                  <>
+                                    <td
+                                      className={cn(
+                                        "py-2 px-4",
+                                        cellClass(remainWeekMin),
+                                      )}
+                                    >
+                                      <div className="leading-tight">
+                                        <div>
+                                          {fmtMin(remainWeekMin)} disponibles
+                                        </div>
+                                        <div className="text-xs text-muted-foreground font-normal">
+                                          fait: {fmtMin(billed.weekMin)} /
+                                          quota: {fmtMin(quotaWeekMin)}
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    <td
+                                      className={cn(
+                                        "py-2 px-4",
+                                        cellClass(remainMonthMin),
+                                      )}
+                                    >
+                                      <div className="leading-tight">
+                                        <div>
+                                          {fmtMin(remainMonthMin)} disponibles
+                                        </div>
+                                        <div className="text-xs text-muted-foreground font-normal">
+                                          fait: {fmtMin(billed.monthMin)} /
+                                          quota: {fmtMin(quotaMonthMin)}
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </>
+                                )}
+
+                                {/* Nb membres (facultatif) */}
+                                <td className="py-2 px-4 text-muted-foreground"></td>
+
+                                {/* Actions */}
+                                <td className="py-2 px-4" />
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </section>

@@ -1,7 +1,26 @@
 "use client";
 
-import { useMemo, useState, useReducer } from "react";
+import { useMemo, useState, useReducer, useEffect } from "react";
+import type { ReactNode } from "react";
+import type { DateRange } from "react-day-picker";
+
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/cn";
+
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+
+import { SearchFull } from "@/components/search-full";
+import { Hint } from "@/components/hint";
+import EditEmployeeDialog from "./EditEmployeeDialog";
+
 import {
   ShieldUser,
   UsersRound,
@@ -9,13 +28,11 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Calendar as CalendarIcon,
+  X,
 } from "lucide-react";
-import { cn } from "@/lib/cn";
-import { SearchFull } from "@/components/search-full";
-import EditEmployeeDialog from "./EditEmployeeDialog";
-import Link from "next/link";
+
 import { type Employee } from "@/components/admin/employees/EditEmployeeDialog";
-import { Hint } from "@/components/hint";
 import { formatHoursHuman } from "@/utils/date";
 
 /* ------------------------------ Types & const ----------------------------- */
@@ -27,6 +44,7 @@ type SortKey =
   | "matricule"
   | "full_name"
   | "availability"
+  | "availabilityRemain"
   | "rate"
   | "realHourlyRate"
   | "realRateCost"
@@ -36,53 +54,77 @@ type SortKey =
   | "status";
 type SortState = { key: SortKey; dir: SortDir };
 
-const COLUMNS: {
+type Column = {
+  id: string; // ✅ unique
   label: string;
   hint?: string;
+  subtitle?: string;
   className?: string;
   sortKey?: SortKey;
-}[] = [
-  { label: "Matricule", sortKey: "matricule" },
-  { label: "Nom", sortKey: "full_name" },
-  {
-    label: "Disponibilité",
-    hint: "Heures restantes / quota maximal",
-    sortKey: "availability",
-  },
-  { label: "Taux horaire", sortKey: "rate" },
-  {
-    label: "Taux horaire réel",
-    hint: "Taux × Charge sociale",
-    sortKey: "realHourlyRate",
-  },
-  {
-    label: "Coûtant réel",
-    hint: "Taux réel × quota.",
-    sortKey: "realRateCost",
-  },
-  {
-    label: "Coûtant interne",
-    hint: "Charges + allowance interne.",
-    sortKey: "internalCost",
-  },
-  {
-    label: "Coûtant vide",
-    hint: "Heures libres × taux réel.",
-    sortKey: "emptyCost",
-  },
-  { label: "Date de création", sortKey: "created_at" },
-  { label: "Statut", hint: "Actif vs inactif", sortKey: "status" },
-  { label: "", className: "w-0" }, // actions
-];
+};
 
 /* --------------------------------- Utils --------------------------------- */
+
+type Worked = {
+  weekMin: number;
+  monthMin: number;
+  m3Min: number;
+  weeksMonth: number;
+  weeks3: number;
+
+  // ✅ internes (client_id = 0)
+  weekInternalMin: number;
+  monthInternalMin: number;
+  m3InternalMin: number;
+
+  // plage personnalisée
+  rangeMin?: number;
+  weeksRange?: number;
+
+  // ✅ interne sur plage
+  rangeInternalMin?: number;
+};
+
+const WORKED_ZERO: Worked = {
+  weekMin: 0,
+  monthMin: 0,
+  m3Min: 0,
+  weeksMonth: 0,
+  weeks3: 0,
+
+  weekInternalMin: 0,
+  monthInternalMin: 0,
+  m3InternalMin: 0,
+
+  rangeMin: 0,
+  weeksRange: 0,
+  rangeInternalMin: 0,
+};
+
+function ymdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatDateCA(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+function formatRangeCA(from: Date, to: Date): string {
+  return `du ${formatDateCA(from)} au ${formatDateCA(to)}`;
+}
 
 const toNumber = (v: unknown): number | null => {
   if (v == null) return null;
   if (typeof v === "string") {
     const t = v.trim();
-    if (t === "") return null; // important: ne pas convertir "" en 0
-    const n = Number(t.replace(",", ".")); // support "25,5"
+    if (t === "") return null;
+    const n = Number(t.replace(",", "."));
     return Number.isFinite(n) ? n : null;
   }
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -108,13 +150,9 @@ type Metrics = {
   clientsQuota: number;
   quotaMax: number | null;
   remainingQuota: number | null;
-  displayRemainingQuota: string;
-  displayPercentQuota: number | string;
-  rate: number | null;
-  realHourlyRate: number | null;
-  realRateCost: number | null;
-  internalCost: number | null;
-  emptyCost: number | null;
+
+  // (optionnel) gardé pour ne pas casser ton code existant
+  rate?: number | null;
 };
 type DecoratedEmployee = {
   e: Employee & { role: string; is_active: boolean };
@@ -130,43 +168,18 @@ function computeMetrics(e: Employee, settings: Settings): Metrics {
 
   const quotaMax = toNumber((e as any).quota_max);
   const remainingQuota = quotaMax != null ? quotaMax - clientsQuota : null;
-  const displayRemainingQuota = formatHoursHuman(remainingQuota);
-  const displayPercentQuota = quotaMax
-    ? ((remainingQuota ?? 0) / quotaMax) * 100
-    : "";
 
-  const social = toNumber((e as any).social_charge) ?? 0;
-  const rate = toNumber((e as any).rate);
-  const realHourlyRate = rate != null ? rate * (1 + social) : null;
-
-  const realRateCost =
-    quotaMax != null && realHourlyRate != null
-      ? quotaMax * realHourlyRate
-      : null;
-
-  const internalCost =
-    quotaMax != null && rate != null && realRateCost != null
-      ? realRateCost -
-        rate * quotaMax +
-        (settings?.base_allowance_hours ?? 0) * rate
-      : null;
-
-  const emptyCost =
-    remainingQuota != null && realHourlyRate != null
-      ? remainingQuota * realHourlyRate
-      : null;
+  // best-effort (si tu as un champ différent, ajuste ici)
+  const rate =
+    toNumber((e as any).rate) ??
+    toNumber((e as any).hourly_rate) ??
+    toNumber((e as any).hour_rate);
 
   return {
     clientsQuota,
     quotaMax,
     remainingQuota,
-    displayRemainingQuota,
-    displayPercentQuota,
     rate,
-    realHourlyRate,
-    realRateCost,
-    internalCost,
-    emptyCost,
   };
 }
 
@@ -176,7 +189,7 @@ function GroupHeader({
   count,
   colSpan,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   count: number;
   colSpan: number;
@@ -211,7 +224,7 @@ function HeaderCell({
   dir,
   onSort,
 }: {
-  col: (typeof COLUMNS)[number];
+  col: Column;
   active: boolean;
   dir: SortDir;
   onSort?: () => void;
@@ -224,24 +237,30 @@ function HeaderCell({
         : "descending"
       : "none";
 
-  // ⚠️ IMPORTANT: pas de <Hint> à l’intérieur du bouton (ça rend un <button/>).
   if (!col.sortKey) {
     return (
       <th
-        className={cn("px-3 py-2 whitespace-nowrap w-max flex", col.className)}
+        className={cn(
+          "px-2 py-1 cursor-pointer select-none whitespace-nowrap w-max align-middle items-center",
+          col.className,
+        )}
         aria-sort={ariaSort as any}
       >
-        <div className="inline-flex items-center gap-2">
-          <span className="whitespace-nowrap">{col.label}</span>
-          {col.hint && <Hint content={col.hint} />}
+        <div className="flex flex-col items-center">
+          <div className="inline-flex items-center gap-2">
+            <span className="whitespace-nowrap">{col.label}</span>
+            {col.hint && <Hint content={col.hint} />}
+          </div>
+          {col.subtitle && <span className="text-xs">{col.subtitle}</span>}
         </div>
       </th>
     );
   }
+
   return (
     <th
       className={cn(
-        "px-2 py-1 cursor-pointer select-none whitespace-nowrap w-max align-middle",
+        "px-2 py-1 cursor-pointer select-none whitespace-nowrap w-max align-middle items-center",
         col.className,
       )}
       aria-sort={ariaSort as any}
@@ -252,11 +271,17 @@ function HeaderCell({
         if (e.key === "Enter" || e.key === " ") onSort?.();
       }}
     >
-      {/* Hint en frère (pas dans un bouton) */}
-      <div className="inline-flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
-        {col.hint && <Hint content={col.hint} />}
-        <span className="whitespace-nowrap">{col.label}</span>
-        <SortIcon active={active} dir={dir} />
+      <div className="flex flex-col items-center">
+        <div className="inline-flex gap-2 px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+          {col.hint && <Hint content={col.hint} />}
+          <span className="whitespace-nowrap">{col.label}</span>
+          <SortIcon active={active} dir={dir} />
+        </div>
+        {col.subtitle && (
+          <span className="text-xs px-2 flex justify-center">
+            {col.subtitle}
+          </span>
+        )}
       </div>
     </th>
   );
@@ -266,23 +291,65 @@ function EmployeeRow({
   e,
   m,
   settings,
+  worked,
+  hasCustomRange,
 }: {
   e: DecoratedEmployee["e"];
   m: Metrics;
   settings: Settings;
+  worked: Worked;
+  hasCustomRange: boolean;
 }) {
   const base = settings?.base_allowance_hours ?? 0;
 
-  const displayRemaining =
-    m.quotaMax != null
-      ? `${m.displayRemainingQuota ?? 0} / ${(m.quotaMax ?? 0) - base}`
-      : "Illimité";
+  const quotaEffectifMax = m.quotaMax != null ? (m.quotaMax ?? 0) : null;
+  const remainingEffectif = m.quotaMax != null ? (m.remainingQuota ?? 0) : null;
+
+  const displayRemainingHours = remainingEffectif;
+  const quotaWeek = m.quotaMax != null ? (m.quotaMax ?? 0) : null;
+
+  // Convertit minutes -> heures (décimal) pour ton formatHoursHuman
+  const billedWeekH = worked.weekMin / 60;
+  const billedMonthH = worked.monthMin / 60;
+
+  // quotas “mois complété” et “3 mois complétés” = quota/semaine * nb semaines (entier)
+  const quotaMonth =
+    quotaWeek != null ? quotaWeek * (worked.weeksMonth ?? 0) : null;
+
+  // disponibles = quota - fait
+  const remainWeek = quotaWeek != null ? quotaWeek - billedWeekH : null;
+  const remainMonth = quotaMonth != null ? quotaMonth - billedMonthH : null;
+
+  // --- plage personnalisée
+  const billedRangeH = (worked.rangeMin ?? 0) / 60;
+  const quotaRange =
+    quotaWeek != null ? quotaWeek * (worked.weeksRange ?? 0) : null;
+  const remainRange = quotaRange != null ? quotaRange - billedRangeH : null;
+
+  const billedWeekInternalH = worked.weekInternalMin / 60;
+  const billedMonthInternalH = worked.monthInternalMin / 60;
+  const billedRangeInternalH = (worked.rangeInternalMin ?? 0) / 60;
+
+  // ✅ quotas internes basés sur la base * nb semaines
+  const quotaInternalWeek = base; // base = quota interne par semaine
+  const quotaInternalMonth = base * (worked.weeksMonth ?? 0); // détecte 4 ou 5 semaines
+  const quotaInternalRange = base * (worked.weeksRange ?? 0);
+
+  const realCellClass = (v: number | null) =>
+    cn(
+      "p-4",
+      v == null || !Number.isFinite(v)
+        ? "text-muted-foreground"
+        : v <= 0
+          ? "text-red-600 dark:text-red-400 font-medium"
+          : "text-green-600 dark:text-green-400 font-medium",
+    );
 
   return (
     <tr className="border-b text-sm last:border-b-0">
-      <td className="p-4 font-mono">{(e as any).matricule ?? "—"}</td>
+      <td className="px-4 py-2 font-mono">{(e as any).matricule ?? "—"}</td>
 
-      <td className="p-4">
+      <td className="px-4 py-2">
         <div className="font-medium truncate">
           <Link className="underline" href={`/admin/employees/${e.id}`}>
             {(e as any).full_name ?? "—"}
@@ -295,39 +362,105 @@ function EmployeeRow({
 
       <td
         className={cn(
-          "p-4",
+          "px-4 py-2 flex flex-col justify-center",
           m.quotaMax != null
-            ? (m.remainingQuota ?? 0) <= 0
+            ? (remainingEffectif ?? 0) <= 0
               ? "text-red-600 dark:text-red-400 font-medium"
               : "text-green-600 dark:text-green-400 font-medium"
             : "text-muted-foreground",
         )}
       >
-        {displayRemaining} (
-        {Number(m.displayPercentQuota) && m.displayPercentQuota.toFixed(0)}%)
+        {displayRemainingHours != null && (
+          <span>{formatHoursHuman(displayRemainingHours)} disponibles</span>
+        )}
+        sur {formatHoursHuman(quotaEffectifMax)}
       </td>
 
-      <td className="p-4">{m.rate != null ? `${m.rate.toFixed(2)} $` : "—"}</td>
-      <td className="p-4">
-        {m.realHourlyRate != null ? `${m.realHourlyRate.toFixed(2)} $` : "—"}
-      </td>
-      <td className="p-4">
-        {m.realRateCost != null ? `${m.realRateCost.toFixed(2)} $` : "—"}
-      </td>
-      <td className="p-4">
-        {m.internalCost != null ? `${m.internalCost.toFixed(2)} $` : "—"}
-      </td>
-      <td className="p-4">
-        {m.emptyCost != null ? `${m.emptyCost.toFixed(2)} $` : "—"}
-      </td>
+      {hasCustomRange ? (
+        <td className="px-4 py-2">
+          <div className="leading-tight">
+            <div>{formatHoursHuman(billedRangeInternalH)}</div>
+            <div className="text-xs text-muted-foreground font-normal">
+              fait: {formatHoursHuman(billedRangeInternalH)} / quota:{" "}
+              {formatHoursHuman(quotaInternalRange)}{" "}
+              {worked.weeksRange ? `(${worked.weeksRange} sem.)` : ""}
+            </div>
+          </div>
+        </td>
+      ) : (
+        <>
+          <td className="px-4 py-2">
+            <div className="leading-tight">
+              <div>{formatHoursHuman(billedWeekInternalH)}</div>
+              <div className="text-xs text-muted-foreground font-normal">
+                fait: {formatHoursHuman(billedWeekInternalH)} / quota:{" "}
+                {formatHoursHuman(quotaInternalWeek)}
+              </div>
+            </div>
+          </td>
 
-      <td className="p-4 text-sm text-muted-foreground">
-        {(e as any).created_at
-          ? new Date((e as any).created_at).toLocaleDateString("fr-CA")
-          : "—"}
-      </td>
+          <td className="px-4 py-2">
+            <div className="leading-tight">
+              <div>{formatHoursHuman(billedMonthInternalH)}</div>
+              <div className="text-xs text-muted-foreground font-normal">
+                fait: {formatHoursHuman(billedMonthInternalH)} / quota:{" "}
+                {formatHoursHuman(quotaInternalMonth)}
+              </div>
+            </div>
+          </td>
+        </>
+      )}
 
-      <td className="p-4 text-sm">
+      {/* Heures réelles: mode plage OU mode 7/30/90 */}
+      {hasCustomRange ? (
+        <td className={realCellClass(remainRange)}>
+          {remainRange == null ? (
+            "Illimité"
+          ) : (
+            <div className="leading-tight">
+              <div>{formatHoursHuman(remainRange)} disponibles</div>
+              <div className="text-xs text-muted-foreground font-normal">
+                fait: {formatHoursHuman(billedRangeH)} / quota:{" "}
+                {formatHoursHuman(quotaRange ?? 0)}
+              </div>
+            </div>
+          )}
+        </td>
+      ) : (
+        <>
+          {/* 7 jours */}
+          <td className={realCellClass(remainWeek)}>
+            {remainWeek == null ? (
+              "Illimité"
+            ) : (
+              <div className="leading-tight">
+                <div>{formatHoursHuman(remainWeek)} disponibles</div>
+                <div className="text-xs text-muted-foreground font-normal">
+                  fait: {formatHoursHuman(billedWeekH)} / quota:{" "}
+                  {formatHoursHuman(quotaWeek ?? 0)}
+                </div>
+              </div>
+            )}
+          </td>
+
+          {/* mois complété */}
+          <td className={realCellClass(remainMonth)}>
+            {remainMonth == null ? (
+              "Illimité"
+            ) : (
+              <div className="leading-tight">
+                <div>{formatHoursHuman(remainMonth)} disponibles</div>
+                <div className="text-xs text-muted-foreground font-normal">
+                  fait: {formatHoursHuman(billedMonthH)} / quota:{" "}
+                  {formatHoursHuman(quotaMonth ?? 0)}
+                </div>
+              </div>
+            )}
+          </td>
+        </>
+      )}
+
+      <td className="px-4 py-2 text-sm">
         {e.is_active ? (
           <Badge>Actif</Badge>
         ) : (
@@ -335,7 +468,7 @@ function EmployeeRow({
         )}
       </td>
 
-      <td className="text-right p-4">
+      <td className="text-right px-4 py-2">
         <EditEmployeeDialog employee={e} />
       </td>
     </tr>
@@ -348,7 +481,7 @@ export default function EmployeesTable({
   initialData,
   settings,
 }: {
-  initialData: Employee[] | unknown; // robustesse si la prop dévie
+  initialData: Employee[] | unknown;
   settings: Settings;
 }) {
   const SAFE_DATA: Employee[] = Array.isArray(initialData)
@@ -366,13 +499,100 @@ export default function EmployeesTable({
   const [maxRate, setMaxRate] = useState<string>("");
   const [minAvail, setMinAvail] = useState<string>("");
 
-  // tri: évite stale closures & gère changement de colonne proprement
+  // Plage personnalisée (heures réelles)
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const hasCustomRange = Boolean(dateRange?.from && dateRange?.to);
+
+  const rangeSubtitle = useMemo(() => {
+    if (!dateRange?.from || !dateRange?.to) return "";
+    return formatRangeCA(dateRange.from, dateRange.to);
+  }, [dateRange?.from, dateRange?.to]);
+
+  // colonnes dynamiques
+  const internalCols: Column[] = hasCustomRange
+    ? [
+        {
+          id: "internal_range",
+          label: "Interne",
+          hint: "Heures internes (client 0) – période personnalisée",
+          subtitle: rangeSubtitle,
+        },
+      ]
+    : [
+        {
+          id: "internal_week",
+          label: "Heures internes",
+          hint: "Heures internes (client 0) – dernière semaine complétée (dim→sam)",
+          subtitle: "Semaine dernière",
+        },
+        {
+          id: "internal_month",
+          label: "Heures internes",
+          hint: "Heures internes (client 0) – mois civil précédent complet ",
+          subtitle: "Mois dernier",
+        },
+      ];
+
+  const COLUMNS: Column[] = useMemo(() => {
+    const base: Column[] = [
+      { id: "matricule", label: "Matricule", sortKey: "matricule" },
+      { id: "nom", label: "Nom", sortKey: "full_name" },
+      {
+        id: "availability",
+        label: "Disponibilité",
+        hint: "Quota d'heures maximal par semaine. Prévision des heures restants selon la disponibilité par semaine et les assignations d'équipes.",
+        sortKey: "availability",
+      },
+      ...internalCols,
+    ];
+
+    const realDefault: Column[] = [
+      {
+        id: "real_7",
+        label: "Heures réelles",
+        hint: "Semaine dernière",
+        subtitle: "Semaine dernière",
+        sortKey: "real_7" as any,
+      },
+      {
+        id: "real_30",
+        label: "Heures réelles",
+        hint: "Mois complété (mois civil précédent)",
+        subtitle: "Mois dernier",
+        sortKey: "real_30" as any,
+      },
+    ];
+
+    const realRange: Column[] = [
+      {
+        id: "real_range",
+        label: "Heures réelles",
+        hint: "Période personnalisée",
+        subtitle: rangeSubtitle,
+        sortKey: "real_7" as any,
+      },
+    ];
+
+    const tail: Column[] = [
+      {
+        id: "status",
+        label: "Statut",
+        hint: "Actif vs inactif",
+        sortKey: "status",
+      },
+      { id: "actions", label: "", className: "w-0" },
+    ];
+
+    return [...base, ...(hasCustomRange ? realRange : realDefault), ...tail];
+  }, [hasCustomRange, rangeSubtitle]);
+
+  // tri
   const [sort, dispatchSort] = useReducer(
     (s: SortState, a: { key: SortKey }): SortState =>
       s.key === a.key
-        ? { key: s.key, dir: s.dir === "asc" ? "desc" : "asc" } // ⬅️ toggle
-        : { key: a.key, dir: "desc" }, // ⬅️ nouveau champ => DESC (plus grand d'abord)
-    { key: "full_name", dir: "asc" }, // état initial
+        ? { key: s.key, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { key: a.key, dir: "desc" },
+    { key: "full_name", dir: "asc" },
   );
 
   const onSortClick = (key: SortKey) => dispatchSort({ key });
@@ -384,6 +604,7 @@ export default function EmployeesTable({
     setMinRate("");
     setMaxRate("");
     setMinAvail("");
+    // volontairement: ne touche pas la plage personnalisée
   };
 
   /* 1) Recherche texte */
@@ -458,6 +679,7 @@ export default function EmployeesTable({
     () => new Intl.Collator("fr", { numeric: true, sensitivity: "base" }),
     [],
   );
+
   const sorted = useMemo(() => {
     const arr = [...filtered];
     arr.sort((a, b) => {
@@ -477,45 +699,6 @@ export default function EmployeesTable({
             (num(a.m.remainingQuota, Number.NEGATIVE_INFINITY) -
               num(b.m.remainingQuota, Number.NEGATIVE_INFINITY))
           );
-        case "rate":
-          return (
-            dir *
-            (num(a.m.rate, Number.NEGATIVE_INFINITY) -
-              num(b.m.rate, Number.NEGATIVE_INFINITY))
-          );
-        case "realHourlyRate":
-          return (
-            dir *
-            (num(a.m.realHourlyRate, Number.NEGATIVE_INFINITY) -
-              num(b.m.realHourlyRate, Number.NEGATIVE_INFINITY))
-          );
-        case "realRateCost":
-          return (
-            dir *
-            (num(a.m.realRateCost, Number.NEGATIVE_INFINITY) -
-              num(b.m.realRateCost, Number.NEGATIVE_INFINITY))
-          );
-        case "internalCost":
-          return (
-            dir *
-            (num(a.m.internalCost, Number.NEGATIVE_INFINITY) -
-              num(b.m.internalCost, Number.NEGATIVE_INFINITY))
-          );
-        case "emptyCost":
-          return (
-            dir *
-            (num(a.m.emptyCost, Number.NEGATIVE_INFINITY) -
-              num(b.m.emptyCost, Number.NEGATIVE_INFINITY))
-          );
-        case "created_at": {
-          const A = a.e.created_at
-            ? new Date(a.e.created_at as any).getTime()
-            : Number.NEGATIVE_INFINITY;
-          const B = b.e.created_at
-            ? new Date(b.e.created_at as any).getTime()
-            : Number.NEGATIVE_INFINITY;
-          return dir * (A - B);
-        }
         case "status":
           return dir * ((a.e.is_active ? 1 : 0) - (b.e.is_active ? 1 : 0));
         default:
@@ -541,11 +724,117 @@ export default function EmployeesTable({
   const nothing =
     admins.length === 0 && users.length === 0 && inactive.length === 0;
 
+  /* Worked (RPC) */
+  const [workedByEmployee, setWorkedByEmployee] = useState<
+    Record<string, Worked>
+  >({});
+
+  const employeeIds = useMemo(
+    () => sorted.map((x) => String(x.e.id)).filter(Boolean),
+    [sorted],
+  );
+
+  const idsKey = useMemo(
+    () => [...employeeIds].sort().join(","),
+    [employeeIds],
+  );
+
+  const rangeKey = useMemo(() => {
+    if (!dateRange?.from || !dateRange?.to) return "";
+    return `${ymdLocal(dateRange.from)}_${ymdLocal(dateRange.to)}`;
+  }, [dateRange?.from, dateRange?.to]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!idsKey) {
+        setWorkedByEmployee({});
+        return;
+      }
+
+      const supabase = createClient();
+
+      if (hasCustomRange && dateRange?.from && dateRange?.to) {
+        const rangeStart = ymdLocal(dateRange.from);
+        const rangeEnd = ymdLocal(dateRange.to);
+
+        const { data, error } = await supabase.rpc(
+          "admin_time_entries_billed_totals_range",
+          {
+            employee_ids: employeeIds,
+            range_start: rangeStart,
+            range_end: rangeEnd,
+          },
+        );
+
+        if (error) {
+          console.error(
+            "rpc admin_time_entries_billed_totals_range error",
+            error,
+          );
+          return;
+        }
+
+        const map: Record<string, Worked> = {};
+        for (const row of data ?? []) {
+          map[String((row as any).profile_id)] = {
+            ...WORKED_ZERO,
+            rangeMin: Number((row as any).billed_range_min ?? 0),
+            rangeInternalMin: Number(
+              (row as any).billed_range_internal_min ?? 0,
+            ),
+            weeksRange: Number((row as any).weeks_in_range ?? 0),
+          };
+        }
+        setWorkedByEmployee(map);
+        return;
+      }
+
+      // mode défaut 7/30/90 (ton RPC existant)
+      const asOf = ymdLocal(new Date());
+
+      const { data, error } = await supabase.rpc(
+        "admin_time_entries_billed_totals",
+        {
+          employee_ids: employeeIds,
+          as_of: asOf,
+        },
+      );
+
+      if (error) {
+        console.error("rpc admin_time_entries_billed_totals error", error);
+        return;
+      }
+
+      const map: Record<string, Worked> = {};
+      for (const row of data ?? []) {
+        map[String((row as any).profile_id)] = {
+          weekMin: Number((row as any).billed_week_min ?? 0),
+          monthMin: Number((row as any).billed_month_min ?? 0),
+          m3Min: Number((row as any).billed_3months_min ?? 0),
+
+          weekInternalMin: Number((row as any).billed_week_internal_min ?? 0),
+          monthInternalMin: Number((row as any).billed_month_internal_min ?? 0),
+          m3InternalMin: Number((row as any).billed_3months_internal_min ?? 0),
+
+          weeksMonth: Number((row as any).weeks_in_prev_month ?? 0),
+          weeks3: Number((row as any).weeks_in_prev_3months ?? 0),
+
+          rangeMin: 0,
+          rangeInternalMin: 0,
+          weeksRange: 0,
+        };
+      }
+      setWorkedByEmployee(map);
+    };
+
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey, rangeKey, hasCustomRange]);
+
   /* -------------------------------- Render -------------------------------- */
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Recherche */}
       <SearchFull
         query={q}
         setQuery={setQ}
@@ -553,6 +842,49 @@ export default function EmployeesTable({
       />
 
       {/* Filtres & actions */}
+      <div className="flex flex-wrap items-center justify-between gap-2 py-3">
+        <div className="flex flex-wrap items-center gap-2 px-4">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <CalendarIcon className="h-4 w-4" />
+                {hasCustomRange && dateRange?.from && dateRange?.to
+                  ? `Plage: ${formatDateCA(dateRange.from)} → ${formatDateCA(
+                      dateRange.to,
+                    )}`
+                  : "Plage personnalisée"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="p-2 w-auto">
+              <Calendar
+                mode="range"
+                numberOfMonths={2}
+                selected={dateRange}
+                onSelect={setDateRange}
+                defaultMonth={dateRange?.from}
+              />
+              <div className="px-2 pt-2 text-xs text-muted-foreground">
+                Astuce : appuyer sur une date sélectionner permet de la remettre
+                à zéro.
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {hasCustomRange && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setDateRange(undefined)}
+              title="Effacer la plage"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+
+        {/* (Optionnel) un bouton reset de tes filtres existants */}
+        {/* <Button variant="outline" onClick={clearFilters}>Réinitialiser les filtres</Button> */}
+      </div>
 
       {/* Tableau */}
       <div className="w-full overflow-hidden flex-1 flex flex-col gap-4 -mt-px">
@@ -561,32 +893,6 @@ export default function EmployeesTable({
             <div className="py-4 text-sm text-muted-foreground">
               Aucun employé ne correspond aux filtres/recherche.
             </div>
-            {/* Panneau debug rapide */}
-            {/* <div className="text-xs rounded-lg border p-3 bg-zinc-50 dark:bg-zinc-900/30">
-                            <div className="font-medium mb-1">Debug</div>
-                            <ul className="grid grid-cols-2 gap-y-1">
-                                <li>
-                                    initialData:{" "}
-                                    {Array.isArray(initialData)
-                                        ? (initialData as any[]).length
-                                        : 0}
-                                </li>
-                                <li>searched: {searched.length}</li>
-                                <li>filtered: {filtered.length}</li>
-                                <li>admins: {admins.length}</li>
-                                <li>users: {users.length}</li>
-                                <li>inactive: {inactive.length}</li>
-                                <li>
-                                    show: A:{String(showAdmins)} U:
-                                    {String(showUsers)} I:{String(showInactive)}
-                                </li>
-                                <li>
-                                    minRate/maxRate: {minRate || "—"} /{" "}
-                                    {maxRate || "—"}
-                                </li>
-                                <li>minAvail: {minAvail || "—"}</li>
-                            </ul>
-                        </div> */}
           </div>
         ) : (
           <section className="flex-1 border rounded-lg overflow-auto">
@@ -595,7 +901,7 @@ export default function EmployeesTable({
                 <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10">
                   {COLUMNS.map((col) => (
                     <HeaderCell
-                      key={col.label}
+                      key={col.id}
                       col={col}
                       active={!!col.sortKey && sort.key === col.sortKey}
                       dir={sort.dir}
@@ -608,6 +914,7 @@ export default function EmployeesTable({
                   ))}
                 </tr>
               </thead>
+
               <tbody>
                 {admins.length > 0 && showAdmins && (
                   <>
@@ -623,6 +930,8 @@ export default function EmployeesTable({
                         e={e}
                         m={m}
                         settings={settings}
+                        worked={workedByEmployee[String(e.id)] ?? WORKED_ZERO}
+                        hasCustomRange={hasCustomRange}
                       />
                     ))}
                   </>
@@ -642,6 +951,8 @@ export default function EmployeesTable({
                         e={e}
                         m={m}
                         settings={settings}
+                        worked={workedByEmployee[String(e.id)] ?? WORKED_ZERO}
+                        hasCustomRange={hasCustomRange}
                       />
                     ))}
                   </>
@@ -661,6 +972,8 @@ export default function EmployeesTable({
                         e={e}
                         m={m}
                         settings={settings}
+                        worked={workedByEmployee[String(e.id)] ?? WORKED_ZERO}
+                        hasCustomRange={hasCustomRange}
                       />
                     ))}
                   </>

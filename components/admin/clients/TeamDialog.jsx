@@ -335,7 +335,7 @@ export function ClientTeamList({ clientId, initial = [] }) {
 
   return (
     <div className="space-y-3">
-      <ul className="divide-y rounded-md border bg-white">
+      <ul className="divide-y rounded-md border">
         {rows.length === 0 && (
           <li className="p-4 text-sm text-muted-foreground">
             Aucun membre pour l'instant.

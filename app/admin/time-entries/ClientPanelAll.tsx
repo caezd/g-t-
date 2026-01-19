@@ -210,8 +210,30 @@ export default function ClientPanelAll({
   const [onlyOpen, setOnlyOpen] = React.useState(false);
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
 
-  const start = React.useMemo(() => startOfWeekSunday(anchor), [anchor]);
-  const end = React.useMemo(() => endOfWeekSaturday(anchor), [anchor]);
+  const start = React.useMemo(
+    () => dateAtNoonLocal(startOfWeekSunday(anchor)),
+    [anchor],
+  );
+
+  const end = React.useMemo(() => {
+    const s = dateAtNoonLocal(startOfWeekSunday(anchor));
+    const e = new Date(s);
+    e.setDate(e.getDate() + 6); // samedi
+    return dateAtNoonLocal(e);
+  }, [anchor]);
+
+  const startISO = React.useMemo(() => {
+    const d = new Date(start);
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  }, [start]);
+
+  const endExclusiveISO = React.useMemo(() => {
+    const d = new Date(end);
+    d.setDate(d.getDate() + 1); // ✅ dimanche 00:00 (exclusif)
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  }, [end]);
 
   const selectedProfileIds = React.useMemo(
     () =>
@@ -234,8 +256,8 @@ export default function ClientPanelAll({
                     profile:profiles (full_name, email, matricule)
                 `,
       )
-      .gte("doc", start.toISOString())
-      .lte("doc", end.toISOString())
+      .gte("doc", startISO)
+      .lt("doc", endExclusiveISO)
       .order("doc", { ascending: true });
 
     if (employeeId) query = query.eq("profile_id", employeeId);
@@ -256,7 +278,7 @@ export default function ClientPanelAll({
   React.useEffect(() => {
     fetchWeek();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employeeId, clientId, onlyOpen, start.toISOString(), end.toISOString()]);
+  }, [employeeId, clientId, onlyOpen, startISO, endExclusiveISO]);
 
   async function setClosed(ids: number[], value: boolean) {
     if (!ids.length) return;
@@ -290,8 +312,8 @@ export default function ClientPanelAll({
     let q = supabase
       .from("time_entries")
       .update({ is_closed: value })
-      .gte("doc", start.toISOString())
-      .lte("doc", end.toISOString());
+      .gte("doc", startISO)
+      .lt("doc", endExclusiveISO);
 
     if (employeeId) q = q.eq("profile_id", employeeId);
     if (clientId) q = q.eq("client_id", clientId);
@@ -432,6 +454,7 @@ export default function ClientPanelAll({
                   if (d) setAnchor(dateAtNoonLocal(d));
                   setOpenCal(false);
                 }}
+                weekStartsOn={0}
                 initialFocus
               />
             </PopoverContent>

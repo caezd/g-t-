@@ -377,18 +377,37 @@ function EmployeeRow({
       </td>
 
       {hasCustomRange ? (
-        <td className="px-4 py-2">
-          <div className="leading-tight">
-            <div>{formatHoursHuman(billedRangeInternalH)}</div>
-            <div className="text-xs text-muted-foreground font-normal">
-              fait: {formatHoursHuman(billedRangeInternalH)} / quota:{" "}
-              {formatHoursHuman(quotaInternalRange)}{" "}
-              {worked.weeksRange ? `(${worked.weeksRange} sem.)` : ""}
+        <>
+          {/* Interne (plage) */}
+          <td className="px-4 py-2">
+            <div className="leading-tight">
+              <div>{formatHoursHuman(billedRangeInternalH)}</div>
+              <div className="text-xs text-muted-foreground font-normal">
+                fait: {formatHoursHuman(billedRangeInternalH)} / quota:{" "}
+                {formatHoursHuman(quotaInternalRange)}{" "}
+                {worked.weeksRange ? `(${worked.weeksRange} sem.)` : ""}
+              </div>
             </div>
-          </div>
-        </td>
+          </td>
+
+          {/* Facturé (plage) */}
+          <td className={realCellClass(remainRange)}>
+            {remainRange == null ? (
+              "Illimité"
+            ) : (
+              <div className="leading-tight">
+                <div>{formatHoursHuman(remainRange)} disponibles</div>
+                <div className="text-xs text-muted-foreground font-normal">
+                  fait: {formatHoursHuman(billedRangeH)} / quota:{" "}
+                  {formatHoursHuman(quotaRange ?? 0)}
+                </div>
+              </div>
+            )}
+          </td>
+        </>
       ) : (
         <>
+          {/* Interne semaine */}
           <td className="px-4 py-2">
             <div className="leading-tight">
               <div>{formatHoursHuman(billedWeekInternalH)}</div>
@@ -399,36 +418,7 @@ function EmployeeRow({
             </div>
           </td>
 
-          <td className="px-4 py-2">
-            <div className="leading-tight">
-              <div>{formatHoursHuman(billedMonthInternalH)}</div>
-              <div className="text-xs text-muted-foreground font-normal">
-                fait: {formatHoursHuman(billedMonthInternalH)} / quota:{" "}
-                {formatHoursHuman(quotaInternalMonth)}
-              </div>
-            </div>
-          </td>
-        </>
-      )}
-
-      {/* Heures réelles: mode plage OU mode 7/30/90 */}
-      {hasCustomRange ? (
-        <td className={realCellClass(remainRange)}>
-          {remainRange == null ? (
-            "Illimité"
-          ) : (
-            <div className="leading-tight">
-              <div>{formatHoursHuman(remainRange)} disponibles</div>
-              <div className="text-xs text-muted-foreground font-normal">
-                fait: {formatHoursHuman(billedRangeH)} / quota:{" "}
-                {formatHoursHuman(quotaRange ?? 0)}
-              </div>
-            </div>
-          )}
-        </td>
-      ) : (
-        <>
-          {/* 7 jours */}
+          {/* Facturé semaine */}
           <td className={realCellClass(remainWeek)}>
             {remainWeek == null ? (
               "Illimité"
@@ -443,7 +433,19 @@ function EmployeeRow({
             )}
           </td>
 
-          {/* mois complété */}
+          {/* Interne mois */}
+          <td className="px-4 py-2">
+            <div className="leading-tight">
+              <div>{formatHoursHuman(billedMonthInternalH)}</div>
+              <div className="text-xs text-muted-foreground font-normal">
+                fait: {formatHoursHuman(billedMonthInternalH)} / quota:{" "}
+                {formatHoursHuman(quotaInternalMonth)}
+                {worked.weeksMonth ? ` (${worked.weeksMonth} sem.)` : ""}
+              </div>
+            </div>
+          </td>
+
+          {/* Facturé mois */}
           <td className={realCellClass(remainMonth)}>
             {remainMonth == null ? (
               "Illimité"
@@ -508,31 +510,6 @@ export default function EmployeesTable({
     return formatRangeCA(dateRange.from, dateRange.to);
   }, [dateRange?.from, dateRange?.to]);
 
-  // colonnes dynamiques
-  const internalCols: Column[] = hasCustomRange
-    ? [
-        {
-          id: "internal_range",
-          label: "Interne",
-          hint: "Heures internes (client 0) – période personnalisée",
-          subtitle: rangeSubtitle,
-        },
-      ]
-    : [
-        {
-          id: "internal_week",
-          label: "Heures internes",
-          hint: "Heures internes (client 0) – dernière semaine complétée (dim→sam)",
-          subtitle: "Semaine dernière",
-        },
-        {
-          id: "internal_month",
-          label: "Heures internes",
-          hint: "Heures internes (client 0) – mois civil précédent complet ",
-          subtitle: "Mois dernier",
-        },
-      ];
-
   const COLUMNS: Column[] = useMemo(() => {
     const base: Column[] = [
       { id: "matricule", label: "Matricule", sortKey: "matricule" },
@@ -543,35 +520,52 @@ export default function EmployeesTable({
         hint: "Quota d'heures maximal par semaine. Prévision des heures restants selon la disponibilité par semaine et les assignations d'équipes.",
         sortKey: "availability",
       },
-      ...internalCols,
     ];
 
-    const realDefault: Column[] = [
-      {
-        id: "real_7",
-        label: "Heures réelles",
-        hint: "Semaine dernière",
-        subtitle: "Semaine dernière",
-        sortKey: "real_7" as any,
-      },
-      {
-        id: "real_30",
-        label: "Heures réelles",
-        hint: "Mois complété (mois civil précédent)",
-        subtitle: "Mois dernier",
-        sortKey: "real_30" as any,
-      },
-    ];
+    const internalWeek: Column = {
+      id: "internal_week",
+      label: "Interne",
+      hint: "Heures internes (client 0) – dernière semaine complétée (dim→sam)",
+      subtitle: "Semaine dernière",
+    };
 
-    const realRange: Column[] = [
-      {
-        id: "real_range",
-        label: "Heures réelles",
-        hint: "Période personnalisée",
-        subtitle: rangeSubtitle,
-        sortKey: "real_7" as any,
-      },
-    ];
+    const billedWeek: Column = {
+      id: "real_7",
+      label: "Facturé",
+      hint: "Semaine dernière",
+      subtitle: "Semaine dernière",
+      sortKey: "real_7" as any,
+    };
+
+    const internalMonth: Column = {
+      id: "internal_month",
+      label: "Interne",
+      hint: "Heures internes (client 0) – mois civil précédent complet",
+      subtitle: "Mois dernier",
+    };
+
+    const billedMonth: Column = {
+      id: "real_30",
+      label: "Facturé",
+      hint: "Mois complété (mois civil précédent)",
+      subtitle: "Mois dernier",
+      sortKey: "real_30" as any,
+    };
+
+    const internalRange: Column = {
+      id: "internal_range",
+      label: "Interne",
+      hint: "Heures internes (client 0) – période personnalisée",
+      subtitle: rangeSubtitle,
+    };
+
+    const billedRange: Column = {
+      id: "real_range",
+      label: "Facturé",
+      hint: "Période personnalisée",
+      subtitle: rangeSubtitle,
+      sortKey: "real_7" as any,
+    };
 
     const tail: Column[] = [
       {
@@ -583,7 +577,12 @@ export default function EmployeesTable({
       { id: "actions", label: "", className: "w-0" },
     ];
 
-    return [...base, ...(hasCustomRange ? realRange : realDefault), ...tail];
+    // ✅ Ordre demandé
+    const middle: Column[] = hasCustomRange
+      ? [internalRange, billedRange]
+      : [internalWeek, billedWeek, internalMonth, billedMonth];
+
+    return [...base, ...middle, ...tail];
   }, [hasCustomRange, rangeSubtitle]);
 
   // tri

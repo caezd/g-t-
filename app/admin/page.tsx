@@ -1,30 +1,26 @@
 // ----------------------------------------------
-// page.tsx — "Bible" mandats / équipes / montants (SANS VUES SQL)
+// page.tsx — "Bible" mandats / équipes / montants
+// - Mois par défaut: mois précédent complété
+// - Sélection du mois complet via calendrier (Shadcn) -> ?month=YYYY-MM
 // ----------------------------------------------
-// On lit UNIQUEMENT les tables existantes et on agrège côté Node/React.
-// Tables utilisées (adapter les noms de colonnes si besoin):
-// - clients (id, name)
-// - clients_mandats (id, client_id, mandat_type_id, amount numeric, quota_max numeric, deleted_at timestamptz null)
-// - mandat_types (id, name, billing_type enum('hourly','monthly'))
-// - clients_team (id, client_id, user_id, role enum('manager','assistant','helper'), quota_max numeric, deleted_at timestamptz null)
-// - time_entries (id, client_id, doc timestamptz, [minutes|duration_min|hours], deleted_at timestamptz null)
 
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
-import { CornerDownRight, User } from "lucide-react";
+import { CornerDownRight } from "lucide-react";
 import { Fragment } from "react";
-import { SearchFull } from "@/components/search-full";
 import { Badge } from "@/components/ui/badge";
+import MonthPicker from "./MonthPicker";
+
+export const dynamic = "force-dynamic";
 
 // -------------------------------------------------
 // Helpers format
 // -------------------------------------------------
 function fmtMoney(n: number | null | undefined, currency = "CAD") {
   if (n == null || Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("fr-CA", {
-    style: "currency",
-    currency,
-  }).format(n);
+  return new Intl.NumberFormat("fr-CA", { style: "currency", currency }).format(
+    n,
+  );
 }
 
 function fmtHours(n: number | null | undefined) {
@@ -33,104 +29,138 @@ function fmtHours(n: number | null | undefined) {
 }
 
 function fmtMinsToH(mins: number | null | undefined) {
-  if (!mins && mins !== 0) return "—";
-  return fmtHours((mins as number) / 60);
+  if (mins == null || Number.isNaN(mins)) return "—";
+  return fmtHours(mins / 60);
 }
 
-// -------------------------------------------------
-// Périodes (Lundi->Dimanche, timezone projet approximée)
-// -------------------------------------------------
-function getBounds() {
-  const now = new Date();
-  const monthStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0),
+function safeNum(n: unknown, fallback = 0) {
+  const v = typeof n === "number" ? n : Number(n);
+  return Number.isFinite(v) ? v : fallback;
+}
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function formatMonthParam(monthStartUTC: Date) {
+  return `${monthStartUTC.getUTCFullYear()}-${pad2(monthStartUTC.getUTCMonth() + 1)}`;
+}
+
+function parseMonthParam(s: string | undefined): Date | null {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || mo < 1 || mo > 12)
+    return null;
+  return new Date(Date.UTC(y, mo - 1, 1, 0, 0, 0));
+}
+
+function monthLabelFR(monthStartUTC: Date) {
+  // Libellé basé sur UTC (stable). Si tu veux absolument Montréal, on peut le faire,
+  // mais ça demande une conversion timezone stricte.
+  return new Intl.DateTimeFormat("fr-CA", {
+    month: "long",
+    year: "numeric",
+  }).format(
+    new Date(
+      Date.UTC(monthStartUTC.getUTCFullYear(), monthStartUTC.getUTCMonth(), 1),
+    ),
   );
-  const nextMonth = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0),
+}
+
+function previousCompletedMonthStartUTC(now = new Date()) {
+  // Mois précédent (complet) en UTC
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1, 0, 0, 0),
   );
-  const monthEnd = new Date(nextMonth.getTime() - 1);
-  // Lundi comme début de semaine
-  const day = now.getUTCDay(); // 0=dimanche, 1=lundi, ...
-  const diffToMonday = (day + 6) % 7; // nombre de jours à reculer pour lundi
-  const monday = new Date(
+}
+
+function nextMonthStartUTC(monthStartUTC: Date) {
+  return new Date(
     Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate(),
+      monthStartUTC.getUTCFullYear(),
+      monthStartUTC.getUTCMonth() + 1,
+      1,
       0,
       0,
       0,
     ),
   );
-  monday.setUTCDate(monday.getUTCDate() - diffToMonday);
-  const sundayEnd = new Date(monday);
-  sundayEnd.setUTCDate(sundayEnd.getUTCDate() + 7);
-  sundayEnd.setUTCSeconds(sundayEnd.getUTCSeconds() - 1);
-  return {
-    weekStartISO: monday.toISOString(),
-    weekEndISO: sundayEnd.toISOString(),
-    monthStartISO: monthStart.toISOString(),
-    monthEndISO: monthEnd.toISOString(),
-  };
 }
 
-// -------------------------------------------------
-// Types légers
-// -------------------------------------------------
-interface Client {
-  id: number;
-  name: string;
-  clients_mandats: ClientMandat[];
-  clients_team: ClientTeam[];
+function monthEndUTC(monthStartUTC: Date) {
+  return new Date(nextMonthStartUTC(monthStartUTC).getTime() - 1);
 }
-interface ClientTeam {
-  client_id: number;
-  quota_max: number | null;
-  deleted_at: string | null;
-}
-interface ClientMandat {
-  client_id: number;
-  mandat_type_id: number;
-  amount: number | null;
-  quota_max: number | null;
-  deleted_at: string | null;
-}
-interface MandatType {
-  id: number;
-  billing_type: "hourly" | "monthly" | string;
-}
-interface TimeEntry {
-  client_id: number;
-  doc: string; // timestamptz iso
-  deleted_at: string | null;
-  minutes?: number | null;
-  duration_min?: number | null;
-  hours?: number | null; // décimal
-}
-interface ClientTeam {
-  id?: number;
-  client_id: number;
-  user_id?: string | number;
-  role?: TeamRole | null;
-  quota_max: number | null;
-  deleted_at: string | null;
-  profile?: { full_name?: string | null; rate?: number | null } | null;
-}
+
 type TeamRole = "manager" | "assistant" | "helper";
 const ROLE_LABEL: Record<TeamRole, string> = {
   manager: "Chargé",
   assistant: "Adjoint",
   helper: "Aidant",
 };
-
 const ROLE_WEIGHT: Record<TeamRole, number> = {
-  manager: 0, // 1er
-  assistant: 1, // 2e
-  helper: 2, // 3e
+  manager: 0,
+  assistant: 1,
+  helper: 2,
 };
 
+// -------------------------------------------------
+// Types (adapte si nécessaire)
+// -------------------------------------------------
+type BillingType = "hourly" | "monthly" | string;
+
+interface MandatTypeLite {
+  description?: string | null;
+  code?: string | null;
+}
+
+interface ClientMandat {
+  id: number;
+  client_id: number;
+  mandat_type_id: number;
+  amount: number | null; // hourly => $/h ; monthly => $/mois
+  quota_max: number | null; // h planifiées (mensuelles)
+  billing_type: BillingType; // IMPORTANT: chez toi c'est ici
+  deleted_at: string | null;
+  type?: MandatTypeLite | null; // join mandat_types pour description/code
+}
+
+interface ProfileLite {
+  id: string;
+  full_name: string | null;
+  rate: number | null; // coût horaire interne
+}
+
+interface ClientTeam {
+  id: number;
+  client_id: number;
+  user_id: string;
+  role: TeamRole | null;
+  quota_max: number | null; // h planifiées (mensuelles)
+  profile?: ProfileLite | null;
+}
+
+interface ClientRow {
+  id: number;
+  name: string;
+  clients_mandats: ClientMandat[];
+  clients_team: ClientTeam[];
+}
+
+interface TimeEntry {
+  client_id: number;
+  doc: string; // timestamptz iso
+  deleted_at: string | null;
+  minutes?: number | null;
+  duration_min?: number | null;
+  hours?: number | null;
+  mandat_id?: number | null;
+  profile_id?: string | null;
+}
+
 function getDurationMins(te: TimeEntry): number {
-  // Essaie plusieurs conventions de colonnes (minutes, duration_min, hours)
   if (typeof te.minutes === "number" && !Number.isNaN(te.minutes))
     return te.minutes;
   if (typeof te.duration_min === "number" && !Number.isNaN(te.duration_min))
@@ -141,95 +171,350 @@ function getDurationMins(te: TimeEntry): number {
 }
 
 // -------------------------------------------------
-// Lecture & agrégation sans vues
+// Bounds: mois sélectionné + dernière semaine complète du mois
 // -------------------------------------------------
-async function loadBible() {
-  const supabase = await createClient();
-  const { weekStartISO, weekEndISO, monthStartISO, monthEndISO } = getBounds();
+function getFullWeeksInMonthUTC(monthStartUTC: Date) {
+  const end = monthEndUTC(monthStartUTC);
 
-  const { data: clients } = await supabase
-    .from<Client>("clients")
+  // Premier lundi >= monthStart
+  const ms = new Date(monthStartUTC);
+  const day = ms.getUTCDay(); // 0=dimanche,1=lundi...
+  const diffToMonday = (1 - day + 7) % 7;
+  const firstMonday = new Date(
+    Date.UTC(ms.getUTCFullYear(), ms.getUTCMonth(), ms.getUTCDate(), 0, 0, 0),
+  );
+  firstMonday.setUTCDate(firstMonday.getUTCDate() + diffToMonday);
+
+  const weeks: Array<{ start: Date; end: Date }> = [];
+  let cur = new Date(firstMonday);
+
+  while (true) {
+    const wStart = new Date(
+      Date.UTC(
+        cur.getUTCFullYear(),
+        cur.getUTCMonth(),
+        cur.getUTCDate(),
+        0,
+        0,
+        0,
+      ),
+    );
+    const wEnd = new Date(wStart);
+    wEnd.setUTCDate(wEnd.getUTCDate() + 6);
+    wEnd.setUTCHours(23, 59, 59, 999);
+
+    // semaine complète incluse dans le mois
+    if (wStart >= monthStartUTC && wEnd <= end) {
+      weeks.push({ start: wStart, end: wEnd });
+      cur.setUTCDate(cur.getUTCDate() + 7);
+      continue;
+    }
+    break;
+  }
+
+  const last = weeks.length ? weeks[weeks.length - 1] : null;
+
+  return { weeks, fullWeeksCount: weeks.length, lastFullWeek: last };
+}
+
+function mandatMonthlyRevenue(m: ClientMandat) {
+  const bt = (m.billing_type ?? "").toLowerCase();
+  const amount = safeNum(m.amount, 0);
+  const quota = safeNum(m.quota_max, 0);
+
+  if (bt === "monthly") return amount;
+  return amount * quota;
+}
+
+function mandatHourlyEquivalent(m: ClientMandat) {
+  const bt = (m.billing_type ?? "").toLowerCase();
+  const amount = safeNum(m.amount, 0);
+  const quota = safeNum(m.quota_max, 0);
+
+  if (bt === "hourly") return amount;
+  if (quota > 0) return amount / quota;
+  return null;
+}
+
+function teamMonthlyCost(team: ClientTeam[]) {
+  return team.reduce((acc, t) => {
+    const q = safeNum(t.quota_max, 0);
+    const rate = safeNum(t.profile?.rate, 0);
+    return acc + q * rate;
+  }, 0);
+}
+
+function allocateTeamCostToMandat(
+  mandat: ClientMandat,
+  mandats: ClientMandat[],
+  totalTeamCost: number,
+) {
+  const totalQuota = mandats.reduce(
+    (acc, m) => acc + safeNum(m.quota_max, 0),
+    0,
+  );
+  if (totalQuota <= 0)
+    return mandats.length ? totalTeamCost / mandats.length : 0;
+  return totalTeamCost * (safeNum(mandat.quota_max, 0) / totalQuota);
+}
+
+// -------------------------------------------------
+// Lecture Supabase (clients + time_entries du mois)
+// -------------------------------------------------
+async function loadBible(monthStartUTC: Date) {
+  const supabase = await createClient();
+
+  // ---- clamp sécurité : empêcher mois courant/futur
+  const maxMonthStartUTC = previousCompletedMonthStartUTC();
+  const effectiveMonthStartUTC =
+    monthStartUTC > maxMonthStartUTC ? maxMonthStartUTC : monthStartUTC;
+
+  // ---- bornes ISO (IMPORTANT: définies avant time_entries)
+  const nextStartUTC = nextMonthStartUTC(effectiveMonthStartUTC);
+  const monthStartISO = effectiveMonthStartUTC.toISOString();
+  const nextMonthStartISO = nextStartUTC.toISOString();
+
+  // ---- pour tes colonnes "semaine" (dernière semaine complète du mois)
+  const { lastFullWeek, fullWeeksCount } = getFullWeeksInMonthUTC(
+    effectiveMonthStartUTC,
+  );
+
+  // ---- debug auth
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  const userId = authData?.user?.id ?? null;
+
+  // ---- Clients (IMPORTANT: pas de !inner pour éviter de filtrer tout)
+  const { data: clientsData, error: clientsError } = await supabase
+    .from("clients")
     .select(
-      "*, clients_mandats(*, type:mandat_types!inner(description)), clients_team(*, profile:profiles!inner(*))",
+      `
+        id,
+        name,
+        clients_mandats(
+          id,
+          client_id,
+          mandat_type_id,
+          amount,
+          quota_max,
+          billing_type,
+          deleted_at,
+          type:mandat_types(
+            description,
+            code
+          )
+        ),
+        clients_team(
+          id,
+          client_id,
+          user_id,
+          role,
+          quota_max,
+          profile:profiles(
+            id,
+            full_name,
+            rate
+          )
+        )
+      `,
     )
     .order("name", { ascending: true });
 
-  return { clients };
+  const clients = ((clientsData as ClientRow[]) ?? []).map((c) => ({
+    ...c,
+    clients_mandats: (c.clients_mandats ?? []).filter((m) => !m.deleted_at),
+    clients_team: c.clients_team ?? [],
+  }));
+
+  // ---- Time entries du mois (avec fallback si mandat_id/profile_id absents)
+  const baseCols = [
+    "client_id",
+    "doc",
+    "deleted_at",
+    "minutes",
+    "duration_min",
+    "hours",
+  ];
+  const tryCols = [...baseCols, "mandat_id", "profile_id"];
+  let timeEntries: TimeEntry[] = [];
+
+  {
+    const { data, error } = await supabase
+      .from("time_entries")
+      .select(tryCols.join(","))
+      .is("deleted_at", null)
+      .gte("doc", monthStartISO)
+      .lt("doc", nextMonthStartISO);
+
+    if (!error) {
+      timeEntries = (data as TimeEntry[]) ?? [];
+    } else {
+      const { data: data2 } = await supabase
+        .from("time_entries")
+        .select(baseCols.join(","))
+        .is("deleted_at", null)
+        .gte("doc", monthStartISO)
+        .lt("doc", nextMonthStartISO);
+
+      timeEntries = (data2 as TimeEntry[]) ?? [];
+    }
+  }
+
+  // ---- Aggregations (identiques à ce que tu avais)
+  const monthMinsByClient = new Map<number, number>();
+  const monthMinsByMandat = new Map<number, number>();
+  const monthMinsByProfile = new Map<string, number>();
+
+  const weekMinsByClient = new Map<number, number>();
+  const weekMinsByMandat = new Map<number, number>();
+  const weekMinsByProfile = new Map<string, number>();
+
+  const weekStart = lastFullWeek?.start ?? null;
+  const weekEnd = lastFullWeek?.end ?? null;
+
+  for (const te of timeEntries) {
+    const mins = getDurationMins(te);
+    if (!mins) continue;
+
+    monthMinsByClient.set(
+      te.client_id,
+      (monthMinsByClient.get(te.client_id) ?? 0) + mins,
+    );
+
+    if (typeof te.mandat_id === "number") {
+      monthMinsByMandat.set(
+        te.mandat_id,
+        (monthMinsByMandat.get(te.mandat_id) ?? 0) + mins,
+      );
+    }
+    if (typeof te.profile_id === "string") {
+      monthMinsByProfile.set(
+        te.profile_id,
+        (monthMinsByProfile.get(te.profile_id) ?? 0) + mins,
+      );
+    }
+
+    if (weekStart && weekEnd) {
+      const d = new Date(te.doc);
+      if (d >= weekStart && d <= weekEnd) {
+        weekMinsByClient.set(
+          te.client_id,
+          (weekMinsByClient.get(te.client_id) ?? 0) + mins,
+        );
+
+        if (typeof te.mandat_id === "number") {
+          weekMinsByMandat.set(
+            te.mandat_id,
+            (weekMinsByMandat.get(te.mandat_id) ?? 0) + mins,
+          );
+        }
+        if (typeof te.profile_id === "string") {
+          weekMinsByProfile.set(
+            te.profile_id,
+            (weekMinsByProfile.get(te.profile_id) ?? 0) + mins,
+          );
+        }
+      }
+    }
+  }
+
+  return {
+    clients,
+    effectiveMonthStartUTC,
+    maxMonthStartUTC,
+    monthStartISO,
+    nextMonthStartISO,
+    lastFullWeek,
+    fullWeeksCount,
+    monthMinsByClient,
+    monthMinsByMandat,
+    monthMinsByProfile,
+    weekMinsByClient,
+    weekMinsByMandat,
+    weekMinsByProfile,
+    debug: {
+      userId,
+      authError: authError?.message ?? null,
+      clientsError: clientsError?.message ?? null,
+      clientsCount: clients.length,
+      timeEntriesCount: timeEntries.length,
+    },
+  };
 }
 
-export const revalidate = 0; // SSR à chaque hit
+export const revalidate = 0;
 
-export default async function BiblePage() {
-  const { clients } = await loadBible();
+export default async function BiblePage({
+  searchParams,
+}: {
+  searchParams?: { month?: string };
+}) {
+  const sp = (await searchParams) ?? {};
 
-  console.log(clients);
+  const requested = parseMonthParam(
+    typeof sp.month === "string" ? sp.month : undefined,
+  );
+  const defaultMonth = previousCompletedMonthStartUTC();
+  const monthStart = requested ?? defaultMonth;
 
-  const STAT_CARDS = [
-    { label: "Clients", value: clients.length, unit: "" },
-    {
-      label: "Quota équipes",
-      value: clients.reduce(
-        (acc, client) => acc + (client.clients_team[0]?.quota_max ?? 0),
-        0,
-      ),
-      unit: "h",
-    },
-    {
-      label: "Quota mandats",
-      value: clients.reduce(
-        (acc, client) => acc + (client.clients_mandats[0]?.quota_max ?? 0),
-        0,
-      ),
-      unit: "h",
-    },
-    {
-      label: "Montants mensuels",
-      value: clients.reduce(
-        (acc, client) => acc + (client.clients_mandats[0]?.amount ?? 0),
-        0,
-      ),
-      unit: "$",
-      isMoney: true,
-    },
-  ];
+  const data = await loadBible(monthStart);
+
+  const { clients, debug } = data;
+
+  // Debug temporaire
+  if (debug.clientsError || debug.authError || clients.length === 0) {
+    return (
+      <div className="p-4 space-y-2">
+        <div className="border p-3 rounded bg-white">
+          <div className="font-medium">Debug chargement</div>
+          <div className="text-sm">
+            userId: {debug.userId ?? "NULL (anon)"}{" "}
+          </div>
+          <div className="text-sm">authError: {debug.authError ?? "—"}</div>
+          <div className="text-sm">
+            clientsError: {debug.clientsError ?? "—"}
+          </div>
+          <div className="text-sm">clientsCount: {debug.clientsCount}</div>
+          <div className="text-sm">
+            timeEntriesCount: {debug.timeEntriesCount}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const monthParam = formatMonthParam(data.effectiveMonthStartUTC);
+  const monthLabel = monthLabelFR(data.effectiveMonthStartUTC);
+
+  const weekLabel = data.lastFullWeek
+    ? `${data.lastFullWeek.start.toLocaleDateString("fr-CA")} – ${data.lastFullWeek.end.toLocaleDateString("fr-CA")}`
+    : "—";
 
   return (
     <div className="flex flex-col overflow-auto w-full">
-      {/* <SearchFull /> */}
-      {/* HEADER STATS */}
-      {/* <header>
-                <div className="border-b grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                    {STAT_CARDS.map((item, i) => (
-                        <div
-                            className={cn(
-                                "px-4 py-6 sm:px-6 lg:px-8",
-                                i > 0 && "sm:border-l"
-                            )}
-                            key={i}
-                        >
-                            <p className="text-sm font-medium leading-6 text-zinc-600">
-                                {item.label}
-                            </p>
-                            <p className="mt-2 flex items-baseline gap-x-2">
-                                <span className="text-4xl font-semibold -tracking-tight">
-                                    {item.isMoney
-                                        ? fmtMoney(Number(item.value))
-                                        : item.isMins
-                                        ? fmtMinsToH(Number(item.value))
-                                        : typeof item.value === "number"
-                                        ? item.unit === "h"
-                                            ? fmtHours(item.value)
-                                            : item.value
-                                        : item.value}
-                                </span>
-                            </p>
-                        </div>
-                    ))}
-                </div>
-            </header> */}
+      {/* Barre de période */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b bg-white">
+        <div className="flex flex-col">
+          <div className="text-sm font-medium">Période</div>
+          <div className="text-xs text-muted-foreground">
+            Mois complet :{" "}
+            <span className="font-medium text-foreground">{monthLabel}</span>
+            {data.lastFullWeek ? (
+              <>
+                {" "}
+                • Dernière semaine complète du mois :{" "}
+                <span className="font-medium text-foreground">{weekLabel}</span>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        <MonthPicker
+          month={monthParam}
+          maxMonth={formatMonthParam(data.maxMonthStartUTC)}
+        />
+      </div>
 
       {/* TABLEAU DETAILLE PAR CLIENT */}
-
       <section className="w-full">
         <div className="mt-4">
           <div
@@ -241,28 +526,28 @@ export default async function BiblePage() {
               role="row"
               className="contents font-medium divide-x divide-y divide-zinc-50"
             >
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Client/Mandat
               </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Quota (h)
               </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Taux ($)
               </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Coûtant ($)
               </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Taux horaire (mandats)
               </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Temps semaine
               </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Temps mois
               </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300 ">
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Écart semaine
               </div>
               <div
@@ -274,119 +559,239 @@ export default async function BiblePage() {
             </div>
 
             {/* Lignes */}
-            {clients.map((r) => (
-              <div key={r.id} className="contents divide-x bg-zinc-300">
-                {/* Ligne principale */}
-                <div className="px-4 py-3 font-medium col-span-10 bg-zinc-400">
-                  {r.name}
-                </div>
+            {data.clients.map((r) => {
+              const mandats = r.clients_mandats ?? [];
+              const team = r.clients_team ?? [];
 
-                {/* Sous-ligne alignée (subgrid) */}
-                {r.clients_mandats && (
-                  <div className="col-span-9 grid grid-cols-subgrid  divide-x divide-zinc-300 text-sm">
-                    {/* cellule 1 (indent + label) */}
-                    {r.clients_mandats.map((mandat, idx) => {
+              const teamSorted = [...team].sort(
+                (a, b) =>
+                  (ROLE_WEIGHT[a.role as TeamRole] ?? 99) -
+                  (ROLE_WEIGHT[b.role as TeamRole] ?? 99),
+              );
+
+              const teamQuotaMonthH = team.reduce(
+                (acc, t) => acc + safeNum(t.quota_max, 0),
+                0,
+              );
+              const mandatsQuotaMonthH = mandats.reduce(
+                (acc, m) => acc + safeNum(m.quota_max, 0),
+                0,
+              );
+
+              const teamCostMonth = teamMonthlyCost(team);
+              const revenueMonth = mandats.reduce(
+                (acc, m) => acc + mandatMonthlyRevenue(m),
+                0,
+              );
+
+              const monthClientMins = data.monthMinsByClient.get(r.id) ?? null;
+              const weekClientMins = data.weekMinsByClient.get(r.id) ?? null;
+
+              return (
+                <div key={r.id} className="contents divide-x bg-zinc-300">
+                  {/* Ligne principale */}
+                  <div className="px-4 py-3 font-medium col-span-10 bg-zinc-400">
+                    {r.name}
+                    <span className="ml-2 text-xs font-normal text-zinc-800">
+                      • Revenus (estim.) {fmtMoney(revenueMonth)} • Coût équipe{" "}
+                      {fmtMoney(teamCostMonth)} • Net{" "}
+                      {fmtMoney(revenueMonth - teamCostMonth)} • Réel mois{" "}
+                      {fmtMinsToH(monthClientMins)}
+                    </span>
+                  </div>
+
+                  {/* Mandats */}
+                  {mandats.length > 0 && (
+                    <div className="col-span-9 grid grid-cols-subgrid divide-x divide-zinc-300 text-sm">
+                      {mandats.map((mandat, idx) => {
+                        const quotaMonth = safeNum(mandat.quota_max, 0);
+
+                        // Plan semaine (sur base semaines complètes dans le mois)
+                        const weeklyPlan =
+                          data.fullWeeksCount > 0
+                            ? quotaMonth / data.fullWeeksCount
+                            : null;
+
+                        const bt = (mandat.billing_type ?? "").toLowerCase();
+                        const amount = safeNum(mandat.amount, 0);
+                        const hourlyEq = mandatHourlyEquivalent(mandat);
+
+                        const allocCost = allocateTeamCostToMandat(
+                          mandat,
+                          mandats,
+                          teamCostMonth,
+                        );
+
+                        const monthMins =
+                          data.monthMinsByMandat.get(mandat.id) ?? null;
+                        const weekMins =
+                          data.weekMinsByMandat.get(mandat.id) ?? null;
+
+                        const monthHours =
+                          monthMins == null ? null : monthMins / 60;
+                        const weekHours =
+                          weekMins == null ? null : weekMins / 60;
+
+                        const ecartMonth =
+                          monthHours == null ? null : monthHours - quotaMonth;
+                        const ecartWeek =
+                          weekHours == null || weeklyPlan == null
+                            ? null
+                            : weekHours - weeklyPlan;
+
+                        return (
+                          <Fragment
+                            key={
+                              mandat.id ??
+                              `${r.id}-${mandat.mandat_type_id}-${idx}`
+                            }
+                          >
+                            <div className="px-4 py-2 flex items-center gap-2 pl-8">
+                              <CornerDownRight className="inline" size={16} />
+                              <span className="text-muted-foreground">
+                                {mandat.type?.description ??
+                                  `Mandat #${mandat.mandat_type_id}`}
+                              </span>
+                              {mandat.type?.code ? (
+                                <Badge variant="outline" className="ml-1">
+                                  {mandat.type.code}
+                                </Badge>
+                              ) : null}
+                            </div>
+
+                            <div className="py-2">
+                              {fmtHours(quotaMonth)}
+                              {mandatsQuotaMonthH - teamQuotaMonthH < 0 ? (
+                                <span className="ml-1 text-red-600 font-medium">
+                                  (équipe: {fmtHours(teamQuotaMonthH)})
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <div className="py-2">
+                              {bt === "hourly"
+                                ? `${fmtMoney(amount)}/h`
+                                : `${fmtMoney(amount)}/mo`}
+                            </div>
+
+                            <div className="py-2">{fmtMoney(allocCost)}</div>
+
+                            <div className="py-2">
+                              {hourlyEq == null
+                                ? "—"
+                                : `${fmtMoney(hourlyEq)}/h`}
+                            </div>
+
+                            <div className="py-2">{fmtMinsToH(weekMins)}</div>
+                            <div className="py-2">{fmtMinsToH(monthMins)}</div>
+
+                            <div
+                              className={cn(
+                                "py-2",
+                                ecartWeek != null &&
+                                  ecartWeek < 0 &&
+                                  "text-red-600 font-medium",
+                              )}
+                            >
+                              {ecartWeek == null ? "—" : fmtHours(ecartWeek)}
+                            </div>
+
+                            <div
+                              className={cn(
+                                "py-2",
+                                ecartMonth != null &&
+                                  ecartMonth < 0 &&
+                                  "text-red-600 font-medium",
+                              )}
+                            >
+                              {ecartMonth == null ? "—" : fmtHours(ecartMonth)}
+                            </div>
+                          </Fragment>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Équipe */}
+                  <div className="col-span-9 grid grid-cols-subgrid text-xs gap-px">
+                    {teamSorted.map((m, idx) => {
+                      const quotaMonth = safeNum(m.quota_max, 0);
+                      const weeklyPlan =
+                        data.fullWeeksCount > 0
+                          ? quotaMonth / data.fullWeeksCount
+                          : null;
+
+                      const rate = safeNum(m.profile?.rate, 0);
+                      const cost = quotaMonth * rate;
+
+                      const pid = m.profile?.id ?? null;
+                      const monthMins = pid
+                        ? (data.monthMinsByProfile.get(pid) ?? null)
+                        : null;
+                      const weekMins = pid
+                        ? (data.weekMinsByProfile.get(pid) ?? null)
+                        : null;
+
+                      const monthHours =
+                        monthMins == null ? null : monthMins / 60;
+                      const weekHours = weekMins == null ? null : weekMins / 60;
+
+                      const ecartMonth =
+                        monthHours == null ? null : monthHours - quotaMonth;
+                      const ecartWeek =
+                        weekHours == null || weeklyPlan == null
+                          ? null
+                          : weekHours - weeklyPlan;
+
                       return (
-                        <Fragment
-                          key={
-                            mandat.id ??
-                            `${r.client_id}-${mandat.mandat_type_id}-${idx}`
-                          }
+                        <div
+                          key={m.id ?? `${r.id}-t-${m.user_id}-${idx}`}
+                          className="contents"
                         >
-                          <div className="px-4 py-2 flex items-center gap-2 pl-8">
-                            <CornerDownRight className="inline" size={16} />
+                          <div className="px-4 pb-3 flex items-center gap-2">
+                            <Badge>{m.role ? ROLE_LABEL[m.role] : "—"}</Badge>
                             <span className="text-muted-foreground">
-                              {mandat.type.description}
+                              {m.profile?.full_name ??
+                                `Employé #${m.user_id ?? idx + 1}`}
                             </span>
                           </div>
-                          {/* Les 8 autres colonnes restent alignées */}
-                          <div className="py-2">
-                            {mandat.quota_max ?? 0} h
-                            {mandat.quota_max -
-                              r.clients_team.reduce(
-                                (acc, m) => acc + (m.quota_max ?? 0),
-                                0,
-                              ) <
-                              0 && (
-                              <span
-                                className={cn("ml-1 text-red-500 font-medium")}
-                              >
-                                (
-                                <>
-                                  {r.clients_team.reduce(
-                                    (acc, m) => acc + (m.quota_max ?? 0),
-                                    0,
-                                  )}
-                                </>
-                                )
-                              </span>
+
+                          <div className="pb-3">{fmtHours(quotaMonth)}</div>
+                          <div className="pb-3">{`${fmtMoney(rate)}/h`}</div>
+                          <div className="pb-3">{fmtMoney(cost)}</div>
+                          <div className="pb-3">—</div>
+
+                          <div className="pb-3">{fmtMinsToH(weekMins)}</div>
+                          <div className="pb-3">{fmtMinsToH(monthMins)}</div>
+
+                          <div
+                            className={cn(
+                              "pb-3",
+                              ecartWeek != null &&
+                                ecartWeek < 0 &&
+                                "text-red-600 font-medium",
                             )}
+                          >
+                            {ecartWeek == null ? "—" : fmtHours(ecartWeek)}
                           </div>
-                          <div className="py-2">{/* détail col 3 */}</div>
-                          <div className="py-2">
-                            {r.clients_team.reduce(
-                              (acc, m) =>
-                                acc +
-                                (m.quota_max ?? 0) * (m.profile?.rate ?? 0),
-                              0,
-                            )}{" "}
-                            $
+
+                          <div
+                            className={cn(
+                              "pb-3",
+                              ecartMonth != null &&
+                                ecartMonth < 0 &&
+                                "text-red-600 font-medium",
+                            )}
+                          >
+                            {ecartMonth == null ? "—" : fmtHours(ecartMonth)}
                           </div>
-                          <div className="py-2">{/* détail col 5 */}</div>
-                          <div className="py-2">{/* détail col 6 */}</div>
-                          <div className="py-2">{/* détail col 7 */}</div>
-                          <div className="py-2">{/* détail col 8 */}</div>
-                          <div className="py-2">{/* détail col 9 */}</div>
-                        </Fragment>
+                        </div>
                       );
                     })}
                   </div>
-                )}
-                <div className="col-span-9 grid grid-cols-subgrid text-xs gap-px">
-                  {(() => {
-                    const teamSorted = [...(r.clients_team ?? [])].sort(
-                      (a, b) =>
-                        (ROLE_WEIGHT[a.role as TeamRole] ?? 99) -
-                        (ROLE_WEIGHT[b.role as TeamRole] ?? 99),
-                    );
-                    return teamSorted.map((m, idx) => (
-                      <div
-                        key={m.id ?? `${r.id}-t-${m.user_id}-${idx}`}
-                        className="contents"
-                      >
-                        {/* Colonne 1 : nom de l’employé (ou user_id), indenté */}
-                        <div className="px-4 pb-3 flex items-center gap-2">
-                          <Badge>{m.role ? ROLE_LABEL[m.role] : "—"}</Badge>
-                          <span className=" text-muted-foreground">
-                            {m.profile?.full_name ??
-                              `Employé #${m.user_id ?? idx + 1}`}
-                          </span>
-                        </div>
-
-                        {/* Colonnes 2..9 alignées (exemples) */}
-                        <div className="pb-3">
-                          {/* Quota équipes (par employé) */}
-                          <span className="text-xs">{m.quota_max ?? 0} h</span>
-                        </div>
-                        <div className="pb-3">{m.profile?.rate ?? 0}</div>
-                        <div className="pb-3">
-                          {m.quota_max * m.profile?.rate} $
-                        </div>
-                        <div className="pb-3">
-                          {/* $ horaire (n/a employé) */}
-                        </div>
-                        <div className="pb-3">
-                          {/* Temps semaine (si tu veux filtrer par user_id plus tard) */}
-                        </div>
-                        <div className="pb-3">{/* Temps mois */}</div>
-                        <div className="pb-3">{/* Écart semaine */}</div>
-                        <div className="pb-3">{/* Écart mois */}</div>
-                      </div>
-                    ));
-                  })()}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>

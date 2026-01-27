@@ -611,18 +611,18 @@ const ClientPage = () => {
     if (!hasRealRange) return COLUMNS as unknown as Column[];
 
     return [
-      COLUMNS[0],
-      COLUMNS[1],
-      COLUMNS[2],
+      COLUMNS[0], // name
+      COLUMNS[1], // quota_week
+      COLUMNS[2], // assigned_hours
       {
         id: "range",
-        label: "Heures réelles",
+        label: "Heures facturées",
         subtitle: realRangeSubtitle,
         hint: "Selon les entrées de temps des membres de l'équipe.",
         sortKey: "remainRange",
       },
-      COLUMNS[6],
-      COLUMNS[7],
+      COLUMNS[5], // team  ✅ (au lieu de COLUMNS[6])
+      COLUMNS[6], // actions ✅ (au lieu de COLUMNS[7])
     ];
   }, [hasRealRange, realRangeSubtitle]);
 

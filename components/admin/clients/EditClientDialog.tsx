@@ -317,7 +317,7 @@ export function EditClientDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline">
+        <Button size="sm" variant="ghost">
           Modifier le client
         </Button>
       </DialogTrigger>

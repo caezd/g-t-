@@ -652,11 +652,6 @@ export default async function BiblePage({
                                 {mandat.type?.description ??
                                   `Mandat #${mandat.mandat_type_id}`}
                               </span>
-                              {mandat.type?.code ? (
-                                <Badge variant="outline" className="ml-1">
-                                  {mandat.type.code}
-                                </Badge>
-                              ) : null}
                             </div>
 
                             <div className="py-2">

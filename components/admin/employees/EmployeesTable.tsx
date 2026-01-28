@@ -51,7 +51,10 @@ type SortKey =
   | "internalCost"
   | "emptyCost"
   | "created_at"
-  | "status";
+  | "status"
+  | "internal_week"
+  | "internal_month"
+  | "internal_range";
 type SortState = { key: SortKey; dir: SortDir };
 
 type Column = {
@@ -195,7 +198,7 @@ function GroupHeader({
   colSpan: number;
 }) {
   return (
-    <tr className="bg-background border-y">
+    <tr className="bg-background  bg-zinc-300/50 dark:bg-zinc-900/50">
       <td colSpan={colSpan} className="px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -335,6 +338,17 @@ function EmployeeRow({
   const quotaInternalMonth = base * (worked.weeksMonth ?? 0); // détecte 4 ou 5 semaines
   const quotaInternalRange = base * (worked.weeksRange ?? 0);
 
+  // Comparaison en minutes (robuste)
+  const quotaInternalWeekMin = Math.round(quotaInternalWeek * 60);
+  const quotaInternalMonthMin = Math.round(quotaInternalMonth * 60);
+  const quotaInternalRangeMin = Math.round(quotaInternalRange * 60);
+
+  const internalTdClass = (billedMin: number, quotaMin: number) =>
+    cn(
+      "px-4 py-2",
+      billedMin > quotaMin ? "text-red-600 dark:text-red-400 font-medium" : "",
+    );
+
   const realCellClass = (v: number | null) =>
     cn(
       "p-4",
@@ -379,7 +393,12 @@ function EmployeeRow({
       {hasCustomRange ? (
         <>
           {/* Interne (plage) */}
-          <td className="px-4 py-2">
+          <td
+            className={internalTdClass(
+              Number(worked.rangeInternalMin ?? 0),
+              quotaInternalRangeMin,
+            )}
+          >
             <div className="leading-tight">
               <div>{formatHoursHuman(billedRangeInternalH)}</div>
               <div className="text-xs text-muted-foreground font-normal">
@@ -408,7 +427,12 @@ function EmployeeRow({
       ) : (
         <>
           {/* Interne semaine */}
-          <td className="px-4 py-2">
+          <td
+            className={internalTdClass(
+              worked.weekInternalMin,
+              quotaInternalWeekMin,
+            )}
+          >
             <div className="leading-tight">
               <div>{formatHoursHuman(billedWeekInternalH)}</div>
               <div className="text-xs text-muted-foreground font-normal">
@@ -434,13 +458,17 @@ function EmployeeRow({
           </td>
 
           {/* Interne mois */}
-          <td className="px-4 py-2">
+          <td
+            className={internalTdClass(
+              worked.monthInternalMin,
+              quotaInternalMonthMin,
+            )}
+          >
             <div className="leading-tight">
               <div>{formatHoursHuman(billedMonthInternalH)}</div>
               <div className="text-xs text-muted-foreground font-normal">
                 fait: {formatHoursHuman(billedMonthInternalH)} / quota:{" "}
                 {formatHoursHuman(quotaInternalMonth)}
-                {worked.weeksMonth ? ` (${worked.weeksMonth} sem.)` : ""}
               </div>
             </div>
           </td>
@@ -833,7 +861,7 @@ export default function EmployeesTable({
   /* -------------------------------- Render -------------------------------- */
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
+    <div className="flex flex-col flex-1">
       <SearchFull
         query={q}
         setQuery={setQ}
@@ -886,7 +914,7 @@ export default function EmployeesTable({
       </div>
 
       {/* Tableau */}
-      <div className="w-full overflow-hidden flex-1 flex flex-col gap-4 -mt-px">
+      <div className="w-full flex-1 flex flex-col gap-4 -mt-px">
         {nothing ? (
           <div className="space-y-3">
             <div className="py-4 text-sm text-muted-foreground">
@@ -894,10 +922,10 @@ export default function EmployeesTable({
             </div>
           </div>
         ) : (
-          <section className="flex-1 border rounded-lg overflow-auto">
+          <section className="flex-1 border ">
             <table className="w-full">
               <thead>
-                <tr className="border-b text-left text-sm bg-zinc-100 dark:bg-zinc-700/10">
+                <tr className="text-left text-sm bg-zinc-300 dark:bg-zinc-800 sticky top-16 h-4 z-5">
                   {COLUMNS.map((col) => (
                     <HeaderCell
                       key={col.id}

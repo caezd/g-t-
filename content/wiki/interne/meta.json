@@ -1,14 +1,16 @@
 {
-    "title": "FocusTDL / Interne",
-    "description": "Base de connaissance relative aux procédures internes de FocusTDL.",
-    "root": true,
-    "pages": [
-        "index",
-        "---Gétime---",
-        "...getime",
-        "---Procédures---",
-        "...procedures",
-        "---Administration---",
-        "...admin"
-    ]
+  "title": "FocusTDL / Interne",
+  "description": "Base de connaissance relative aux procédures internes de FocusTDL.",
+  "root": true,
+  "pages": [
+    "index",
+    "---Gétime---",
+    "...getime",
+    "---Général---",
+    "...general",
+    "---Procédures---",
+    "...procedures",
+    "---Administration---",
+    "...admin"
+  ]
 }

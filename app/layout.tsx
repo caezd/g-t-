@@ -7,39 +7,39 @@ import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-    title: "Gétime — FOCUS TDL",
-    description: "Une plateforme de gestion de feuilles de temps.",
+  title: "Gétime — FOCUS TDL",
+  description: "Une plateforme de gestion de feuilles de temps.",
 };
 
 const geistSans = Geist({
-    variable: "--font-geist-sans",
-    display: "swap",
-    subsets: ["latin"],
+  variable: "--font-geist-sans",
+  display: "swap",
+  subsets: ["latin"],
 });
 
 export default function RootLayout({
-    children,
+  children,
 }: Readonly<{
-    children: React.ReactNode;
+  children: React.ReactNode;
 }>) {
-    return (
-        <html lang="fr" className="h-full" suppressHydrationWarning>
-            <body
-                suppressHydrationWarning
-                className={`${geistSans.variable} antialiased font-sans min-h-screen dark:bg-zinc-950 bg-zinc-50`}
-            >
-                <ThemeProvider
-                    attribute="class"
-                    defaultTheme="system"
-                    enableSystem
-                    disableTransitionOnChange
-                >
-                    <RootProvider>
-                        {children}
-                        <Toaster />
-                    </RootProvider>
-                </ThemeProvider>
-            </body>
-        </html>
-    );
+  return (
+    <html lang="fr" suppressHydrationWarning>
+      <body
+        suppressHydrationWarning
+        className={`${geistSans.variable} antialiased font-sans min-h-screen dark:bg-zinc-950 bg-zinc-50`}
+      >
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <RootProvider>
+            {children}
+            <Toaster />
+          </RootProvider>
+        </ThemeProvider>
+      </body>
+    </html>
+  );
 }

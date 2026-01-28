@@ -606,6 +606,8 @@ const ClientPage = () => {
   }, [realRange?.from, realRange?.to]);
 
   const [hideArchived, setHideArchived] = useState(true);
+  type BillingFilter = "all" | "hourly" | "monthly";
+  const [billingFilter, setBillingFilter] = useState<BillingFilter>("all");
 
   const columns = useMemo<Column[]>(() => {
     if (!hasRealRange) return COLUMNS as unknown as Column[];
@@ -785,8 +787,14 @@ const ClientPage = () => {
       list = list.filter((c: any) => !c.deleted_at);
     }
 
+    if (billingFilter !== "all") {
+      list = list.filter((c: any) =>
+        (c.mandats ?? []).some((m: any) => m?.billing_type === billingFilter),
+      );
+    }
+
     return list;
-  }, [q, clients, onlyWithHours, hoursByClientId, hideArchived]);
+  }, [q, clients, onlyWithHours, hoursByClientId, hideArchived, billingFilter]);
 
   type DecoratedClient = {
     client: any;
@@ -1105,7 +1113,7 @@ const ClientPage = () => {
             </div>
           </div>
 
-          <section className="flex flex-col flex-1 overflow-hidden">
+          <section className="flex flex-col flex-1">
             <SearchFull
               query={q}
               setQuery={setQ}
@@ -1132,7 +1140,7 @@ const ClientPage = () => {
                       defaultMonth={realRange?.from}
                     />
                     <div className="px-2 pt-2 text-xs text-muted-foreground">
-                      Astuce : appuyer sur une date sélectionner permet de la
+                      Astuce : appuyer sur une date sélectionnée permet de la
                       remettre à zéro.
                     </div>
                   </PopoverContent>
@@ -1154,7 +1162,22 @@ const ClientPage = () => {
                     Calcul en cours…
                   </span>
                 )}
-                <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 text-sm">
+                  <Select
+                    value={billingFilter}
+                    onValueChange={(v) => setBillingFilter(v as BillingFilter)}
+                  >
+                    <SelectTrigger className="h-8 w-[170px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous</SelectItem>
+                      <SelectItem value="hourly">À l&apos;heure</SelectItem>
+                      <SelectItem value="monthly">Au mois</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <label className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
                   <Checkbox
                     checked={hideArchived}
                     onCheckedChange={(v) => setHideArchived(v === true)}
@@ -1164,11 +1187,11 @@ const ClientPage = () => {
               </div>
             </div>
 
-            <div className="w-full overflow-hidden flex-1 flex flex-col gap-4">
-              <section className="flex-1 overflow-auto">
+            <div className="w-full flex-1 flex flex-col gap-4">
+              <section className="flex-1">
                 <table className="w-full">
                   <thead>
-                    <tr className="text-left border-b text-sm bg-zinc-300 dark:bg-zinc-800/50 sticky top-0 h-4">
+                    <tr className="text-left border-b text-sm bg-zinc-300 dark:bg-zinc-800 sticky top-16 h-4 z-5">
                       {columns.map((col) => (
                         <HeaderCell
                           key={col.id}
@@ -1272,7 +1295,7 @@ const ClientPage = () => {
                           <tr
                             key={client.id}
                             className={cn(
-                              "text-sm border-t border-zinc-300",
+                              "text-sm border-t border-zinc-300 dark:border-zinc-800",
                               stripeBg,
                             )}
                           >

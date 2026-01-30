@@ -67,13 +67,25 @@ import {
   X,
   CornerDownRight,
 } from "lucide-react";
-import { format, startOfWeek, endOfWeek } from "date-fns";
+import {
+  format,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+  subWeeks,
+  subDays,
+  endOfDay,
+} from "date-fns";
 import { frCA } from "date-fns/locale";
 
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray } from "react-hook-form";
 import { EditClientDialog } from "@/components/admin/clients/EditClientDialog";
+import { MandatTimeEntriesDialog } from "@/components/admin/mandats/MandatTimeEntriesDialog";
+
 import { SearchFull } from "@/components/search-full";
 
 import Link from "next/link";
@@ -81,6 +93,17 @@ import { cn } from "@/lib/cn";
 import { toHoursDecimal, formatHoursHuman } from "@/utils/date";
 import { translateMandatCode } from "@/utils/codes";
 
+function previousMonthRange() {
+  const prev = subMonths(new Date(), 1);
+  return { from: startOfMonth(prev), to: endOfMonth(prev) };
+}
+function previousCompletedWeekRange(now = new Date()) {
+  // semaine dim->sam (weekStartsOn: 0). Change à 1 si tu veux lun->dim.
+  const startThisWeek = startOfWeek(now, { weekStartsOn: 0 });
+  const from = subWeeks(startThisWeek, 1); // dimanche de la semaine précédente
+  const to = endOfDay(subDays(startThisWeek, 1)); // samedi dernier (fin de journée)
+  return { from, to };
+}
 // ------------------------
 // Helpers quota_max
 // ------------------------
@@ -1134,6 +1157,7 @@ const ClientPage = () => {
                   <PopoverContent align="start" className="p-2 w-auto">
                     <Calendar
                       mode="range"
+                      weekStartsOn={0}
                       numberOfMonths={2}
                       selected={realRange}
                       onSelect={setRealRange}
@@ -1584,15 +1608,34 @@ const ClientPage = () => {
                                       cellClass(remainRangeMin),
                                     )}
                                   >
-                                    <div className="leading-tight">
-                                      <div>
-                                        {fmtMin(remainRangeMin)} disponibles
-                                      </div>
-                                      <div className="text-xs text-muted-foreground font-normal">
-                                        fait: {fmtMin(billedRangeMin)} / quota:{" "}
-                                        {fmtMin(quotaRangeMin)}
-                                      </div>
-                                    </div>
+                                    <MandatTimeEntriesDialog
+                                      clientId={Number(client.id)}
+                                      title={`Entrées de temps — ${client.name}`}
+                                      range={
+                                        realRange?.from && realRange?.to
+                                          ? {
+                                              from: realRange.from,
+                                              to: realRange.to,
+                                            }
+                                          : undefined
+                                      }
+                                    >
+                                      <button
+                                        type="button"
+                                        className="w-full text-left hover:underline focus:outline-none"
+                                        title="Voir les entrées de temps"
+                                      >
+                                        <div className="leading-tight">
+                                          <div>
+                                            {fmtMin(remainRangeMin)} disponibles
+                                          </div>
+                                          <div className="text-xs text-muted-foreground font-normal">
+                                            fait: {fmtMin(range.rangeMin)} /
+                                            quota: {fmtMin(quotaRangeMin)}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    </MandatTimeEntriesDialog>
                                   </td>
                                 ) : (
                                   <>
@@ -1602,15 +1645,29 @@ const ClientPage = () => {
                                         cellClass(remainWeekMin),
                                       )}
                                     >
-                                      <div className="leading-tight">
-                                        <div>
-                                          {fmtMin(remainWeekMin)} disponibles
-                                        </div>
-                                        <div className="text-xs text-muted-foreground font-normal">
-                                          fait: {fmtMin(billed.weekMin)} /
-                                          quota: {fmtMin(quotaWeekMin)}
-                                        </div>
-                                      </div>
+                                      <MandatTimeEntriesDialog
+                                        mandatId={Number(m.id)}
+                                        clientId={Number(client.id)}
+                                        title={`Entrées de temps — ${mandatLabel} (semaine précédente complétée)`}
+                                        range={previousCompletedWeekRange()}
+                                      >
+                                        <button
+                                          type="button"
+                                          className="w-full text-left hover:underline focus:outline-none"
+                                          title="Voir les entrées de temps"
+                                        >
+                                          <div className="leading-tight">
+                                            <div>
+                                              {fmtMin(remainWeekMin)}{" "}
+                                              disponibles
+                                            </div>
+                                            <div className="text-xs text-muted-foreground font-normal">
+                                              fait: {fmtMin(billed.weekMin)} /
+                                              quota: {fmtMin(quotaWeekMin)}
+                                            </div>
+                                          </div>
+                                        </button>
+                                      </MandatTimeEntriesDialog>
                                     </td>
 
                                     <td
@@ -1619,15 +1676,29 @@ const ClientPage = () => {
                                         cellClass(remainMonthMin),
                                       )}
                                     >
-                                      <div className="leading-tight">
-                                        <div>
-                                          {fmtMin(remainMonthMin)} disponibles
-                                        </div>
-                                        <div className="text-xs text-muted-foreground font-normal">
-                                          fait: {fmtMin(billed.monthMin)} /
-                                          quota: {fmtMin(quotaMonthMin)}
-                                        </div>
-                                      </div>
+                                      <MandatTimeEntriesDialog
+                                        mandatId={Number(m.id)}
+                                        clientId={Number(client.id)}
+                                        title={`Entrées de temps — ${mandatLabel} (mois dernier)`}
+                                        range={previousMonthRange()}
+                                      >
+                                        <button
+                                          type="button"
+                                          className="w-full text-left hover:underline focus:outline-none"
+                                          title="Voir les entrées de temps"
+                                        >
+                                          <div className="leading-tight">
+                                            <div>
+                                              {fmtMin(remainMonthMin)}{" "}
+                                              disponibles
+                                            </div>
+                                            <div className="text-xs text-muted-foreground font-normal">
+                                              fait: {fmtMin(billed.monthMin)} /
+                                              quota: {fmtMin(quotaMonthMin)}
+                                            </div>
+                                          </div>
+                                        </button>
+                                      </MandatTimeEntriesDialog>
                                     </td>
                                   </>
                                 )}

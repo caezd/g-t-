@@ -152,15 +152,26 @@ interface ClientRow {
 interface TimeEntry {
   client_id: number;
   doc: string; // timestamptz iso
-  deleted_at: string | null;
+  deleted_at?: string | null;
+  billed_amount?: number | string | null; // heures en décimale (ex: 1.25)
   minutes?: number | null;
   duration_min?: number | null;
   hours?: number | null;
   mandat_id?: number | null;
   profile_id?: string | null;
+  // selon ton schéma, l'employé peut aussi être stocké dans user_id / employee_id
+  user_id?: string | null;
+  employee_id?: string | null;
+  created_by?: string | null;
 }
 
 function getDurationMins(te: TimeEntry): number {
+  // Priorité: billed_amount (heures décimales) -> minutes
+  if (te.billed_amount != null) {
+    const h = Number(te.billed_amount);
+    if (Number.isFinite(h) && !Number.isNaN(h)) return Math.round(h * 60);
+  }
+  // Fallbacks (si jamais ton schéma change)
   if (typeof te.minutes === "number" && !Number.isNaN(te.minutes))
     return te.minutes;
   if (typeof te.duration_min === "number" && !Number.isNaN(te.duration_min))
@@ -325,48 +336,99 @@ async function loadBible(monthStartUTC: Date) {
     clients_team: c.clients_team ?? [],
   }));
 
-  // ---- Time entries du mois (avec fallback si mandat_id/profile_id absents)
+  // ---- Time entries du mois
+  // IMPORTANT: selon ton schéma, l'employé peut être stocké en profile_id OU user_id OU employee_id.
+  // On essaie plusieurs sélections pour éviter de "tomber" sur un fallback trop pauvre (qui rendrait la colonne vide).
   const baseCols = [
     "client_id",
     "doc",
     "deleted_at",
-    "minutes",
-    "duration_min",
-    "hours",
+    "billed_amount", // heures en décimale (source de vérité chez toi)
   ];
-  const tryCols = [...baseCols, "mandat_id", "profile_id"];
-  let timeEntries: TimeEntry[] = [];
 
-  {
-    const { data, error } = await supabase
+  // Fallback si ta table n'a pas de colonne deleted_at (ou si tu veux inclure tout sans soft-delete)
+  const baseColsNoDeleted = ["client_id", "doc", "billed_amount"];
+
+  const selectAttempts: string[][] = [
+    [
+      ...baseCols,
+      "mandat_id",
+      "profile_id",
+      "user_id",
+      "employee_id",
+      "created_by",
+    ],
+    [...baseCols, "mandat_id", "user_id", "employee_id", "created_by"],
+    [...baseCols, "mandat_id", "profile_id"],
+    [...baseCols, "mandat_id", "user_id"],
+    [...baseCols, "mandat_id", "employee_id"],
+    // au besoin: sans mandat_id, juste pour distribuer par employé
+    [...baseCols, "profile_id", "user_id", "employee_id", "created_by"],
+    [...baseCols, "user_id"],
+    [...baseCols, "profile_id"],
+    [...baseCols, "employee_id"],
+    [...baseCols, "created_by"],
+    baseCols,
+    // --- Fallback: mêmes sélections, mais sans deleted_at (si la colonne n'existe pas)
+    [
+      ...baseColsNoDeleted,
+      "mandat_id",
+      "profile_id",
+      "user_id",
+      "employee_id",
+      "created_by",
+    ],
+    [...baseColsNoDeleted, "mandat_id", "user_id", "employee_id", "created_by"],
+    [...baseColsNoDeleted, "mandat_id", "profile_id"],
+    [...baseColsNoDeleted, "mandat_id", "user_id"],
+    [...baseColsNoDeleted, "mandat_id", "employee_id"],
+    [
+      ...baseColsNoDeleted,
+      "profile_id",
+      "user_id",
+      "employee_id",
+      "created_by",
+    ],
+    [...baseColsNoDeleted, "user_id"],
+    [...baseColsNoDeleted, "profile_id"],
+    [...baseColsNoDeleted, "employee_id"],
+    [...baseColsNoDeleted, "created_by"],
+    baseColsNoDeleted,
+  ];
+
+  let timeEntries: TimeEntry[] = [];
+  for (const cols of selectAttempts) {
+    let q = supabase
       .from("time_entries")
-      .select(tryCols.join(","))
-      .is("deleted_at", null)
+      .select(cols.join(","))
       .gte("doc", monthStartISO)
       .lt("doc", nextMonthStartISO);
 
+    // Appliquer le filtre soft-delete uniquement si la colonne existe dans cette tentative.
+    if (cols.includes("deleted_at")) {
+      q = q.is("deleted_at", null);
+    }
+
+    const { data, error } = await q;
+
     if (!error) {
       timeEntries = (data as TimeEntry[]) ?? [];
-    } else {
-      const { data: data2 } = await supabase
-        .from("time_entries")
-        .select(baseCols.join(","))
-        .is("deleted_at", null)
-        .gte("doc", monthStartISO)
-        .lt("doc", nextMonthStartISO);
-
-      timeEntries = (data2 as TimeEntry[]) ?? [];
+      break;
     }
   }
 
   // ---- Aggregations (identiques à ce que tu avais)
   const monthMinsByClient = new Map<number, number>();
   const monthMinsByMandat = new Map<number, number>();
-  const monthMinsByProfile = new Map<string, number>();
+  // IMPORTANT: par client+profil (sinon on mélange les heures d'un employé sur tous ses clients)
+  const monthMinsByClientProfile = new Map<string, number>();
 
   const weekMinsByClient = new Map<number, number>();
   const weekMinsByMandat = new Map<number, number>();
-  const weekMinsByProfile = new Map<string, number>();
+  const weekMinsByClientProfile = new Map<string, number>();
+
+  const keyCP = (clientId: number, profileId: string) =>
+    `${clientId}|${profileId}`;
 
   const weekStart = lastFullWeek?.start ?? null;
   const weekEnd = lastFullWeek?.end ?? null;
@@ -374,6 +436,17 @@ async function loadBible(monthStartUTC: Date) {
   for (const te of timeEntries) {
     const mins = getDurationMins(te);
     if (!mins) continue;
+
+    const employeeId =
+      typeof te.profile_id === "string" && te.profile_id
+        ? te.profile_id
+        : typeof te.user_id === "string" && te.user_id
+          ? te.user_id
+          : typeof te.employee_id === "string" && te.employee_id
+            ? te.employee_id
+            : typeof te.created_by === "string" && te.created_by
+              ? te.created_by
+              : null;
 
     monthMinsByClient.set(
       te.client_id,
@@ -386,10 +459,11 @@ async function loadBible(monthStartUTC: Date) {
         (monthMinsByMandat.get(te.mandat_id) ?? 0) + mins,
       );
     }
-    if (typeof te.profile_id === "string") {
-      monthMinsByProfile.set(
-        te.profile_id,
-        (monthMinsByProfile.get(te.profile_id) ?? 0) + mins,
+    if (employeeId) {
+      const k = keyCP(te.client_id, employeeId);
+      monthMinsByClientProfile.set(
+        k,
+        (monthMinsByClientProfile.get(k) ?? 0) + mins,
       );
     }
 
@@ -407,10 +481,11 @@ async function loadBible(monthStartUTC: Date) {
             (weekMinsByMandat.get(te.mandat_id) ?? 0) + mins,
           );
         }
-        if (typeof te.profile_id === "string") {
-          weekMinsByProfile.set(
-            te.profile_id,
-            (weekMinsByProfile.get(te.profile_id) ?? 0) + mins,
+        if (employeeId) {
+          const k = keyCP(te.client_id, employeeId);
+          weekMinsByClientProfile.set(
+            k,
+            (weekMinsByClientProfile.get(k) ?? 0) + mins,
           );
         }
       }
@@ -427,10 +502,10 @@ async function loadBible(monthStartUTC: Date) {
     fullWeeksCount,
     monthMinsByClient,
     monthMinsByMandat,
-    monthMinsByProfile,
+    monthMinsByClientProfile,
     weekMinsByClient,
     weekMinsByMandat,
-    weekMinsByProfile,
+    weekMinsByClientProfile,
     debug: {
       userId,
       authError: authError?.message ?? null,
@@ -519,7 +594,7 @@ export default async function BiblePage({
         <div className="mt-4">
           <div
             role="table"
-            className="border grid [grid-template-columns:minmax(14rem,1.3fr)_repeat(2,10rem)_repeat(2,12rem)_repeat(2,10rem)_repeat(2,10rem)] text-sm overflow-auto divide-y"
+            className="border grid [grid-template-columns:minmax(14rem,1.3fr)_repeat(3,10rem)_repeat(2,12rem)_repeat(3,10rem)] text-sm overflow-auto divide-y"
           >
             {/* En-tête */}
             <div
@@ -530,31 +605,13 @@ export default async function BiblePage({
                 Client/Mandat
               </div>
               <div role="columnheader" className="px-4 py-3 bg-zinc-300">
-                Quota (h)
+                Assigné (h)
+              </div>
+              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
+                Réel (h)
               </div>
               <div role="columnheader" className="px-4 py-3 bg-zinc-300">
                 Taux ($)
-              </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
-                Coûtant ($)
-              </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
-                Taux horaire (mandats)
-              </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
-                Temps semaine
-              </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
-                Temps mois
-              </div>
-              <div role="columnheader" className="px-4 py-3 bg-zinc-300">
-                Écart semaine
-              </div>
-              <div
-                role="columnheader"
-                className="px-4 py-3 bg-zinc-300 border-b border-zinc-50"
-              >
-                Écart mois
               </div>
             </div>
 
@@ -579,25 +636,12 @@ export default async function BiblePage({
               );
 
               const teamCostMonth = teamMonthlyCost(team);
-              const revenueMonth = mandats.reduce(
-                (acc, m) => acc + mandatMonthlyRevenue(m),
-                0,
-              );
-
-              const monthClientMins = data.monthMinsByClient.get(r.id) ?? null;
-              const weekClientMins = data.weekMinsByClient.get(r.id) ?? null;
 
               return (
                 <div key={r.id} className="contents divide-x bg-zinc-300">
                   {/* Ligne principale */}
-                  <div className="px-4 py-3 font-medium col-span-10 bg-zinc-400">
+                  <div className="px-4 py-3 font-medium col-span-9 bg-zinc-400">
                     {r.name}
-                    <span className="ml-2 text-xs font-normal text-zinc-800">
-                      • Revenus (estim.) {fmtMoney(revenueMonth)} • Coût équipe{" "}
-                      {fmtMoney(teamCostMonth)} • Net{" "}
-                      {fmtMoney(revenueMonth - teamCostMonth)} • Réel mois{" "}
-                      {fmtMinsToH(monthClientMins)}
-                    </span>
                   </div>
 
                   {/* Mandats */}
@@ -654,52 +698,23 @@ export default async function BiblePage({
                               </span>
                             </div>
 
-                            <div className="py-2">
+                            <div
+                              className={cn(
+                                "p-2",
+                                mandatsQuotaMonthH - teamQuotaMonthH < 0
+                                  ? "ml-1 text-red-600 font-medium"
+                                  : null,
+                              )}
+                            >
                               {fmtHours(quotaMonth)}
-                              {mandatsQuotaMonthH - teamQuotaMonthH < 0 ? (
-                                <span className="ml-1 text-red-600 font-medium">
-                                  (équipe: {fmtHours(teamQuotaMonthH)})
-                                </span>
-                              ) : null}
                             </div>
+
+                            <div className="py-2">{fmtMinsToH(monthMins)}</div>
 
                             <div className="py-2">
                               {bt === "hourly"
                                 ? `${fmtMoney(amount)}/h`
                                 : `${fmtMoney(amount)}/mo`}
-                            </div>
-
-                            <div className="py-2">{fmtMoney(allocCost)}</div>
-
-                            <div className="py-2">
-                              {hourlyEq == null
-                                ? "—"
-                                : `${fmtMoney(hourlyEq)}/h`}
-                            </div>
-
-                            <div className="py-2">{fmtMinsToH(weekMins)}</div>
-                            <div className="py-2">{fmtMinsToH(monthMins)}</div>
-
-                            <div
-                              className={cn(
-                                "py-2",
-                                ecartWeek != null &&
-                                  ecartWeek < 0 &&
-                                  "text-red-600 font-medium",
-                              )}
-                            >
-                              {ecartWeek == null ? "—" : fmtHours(ecartWeek)}
-                            </div>
-
-                            <div
-                              className={cn(
-                                "py-2",
-                                ecartMonth != null &&
-                                  ecartMonth < 0 &&
-                                  "text-red-600 font-medium",
-                              )}
-                            >
-                              {ecartMonth == null ? "—" : fmtHours(ecartMonth)}
                             </div>
                           </Fragment>
                         );
@@ -719,13 +734,20 @@ export default async function BiblePage({
                       const rate = safeNum(m.profile?.rate, 0);
                       const cost = quotaMonth * rate;
 
-                      const pid = m.profile?.id ?? null;
-                      const monthMins = pid
-                        ? (data.monthMinsByProfile.get(pid) ?? null)
-                        : null;
-                      const weekMins = pid
-                        ? (data.weekMinsByProfile.get(pid) ?? null)
-                        : null;
+                      // certaines lignes d'équipe peuvent avoir profile null (ou la relation utilise user_id)
+                      const pid = m.profile?.id ?? m.user_id ?? null;
+                      const monthMins =
+                        pid == null
+                          ? null
+                          : (data.monthMinsByClientProfile.get(
+                              `${r.id}|${pid}`,
+                            ) ?? null);
+                      const weekMins =
+                        pid == null
+                          ? null
+                          : (data.weekMinsByClientProfile.get(
+                              `${r.id}|${pid}`,
+                            ) ?? null);
 
                       const monthHours =
                         monthMins == null ? null : monthMins / 60;
@@ -751,13 +773,16 @@ export default async function BiblePage({
                             </span>
                           </div>
 
-                          <div className="pb-3">{fmtHours(quotaMonth)}</div>
+                          <div className="px-2 pb-3">
+                            {fmtHours(quotaMonth)}
+                          </div>
+
+                          <div className="pb-3">{fmtMinsToH(monthMins)}</div>
                           <div className="pb-3">{`${fmtMoney(rate)}/h`}</div>
                           <div className="pb-3">{fmtMoney(cost)}</div>
                           <div className="pb-3">—</div>
 
                           <div className="pb-3">{fmtMinsToH(weekMins)}</div>
-                          <div className="pb-3">{fmtMinsToH(monthMins)}</div>
 
                           <div
                             className={cn(

@@ -35,6 +35,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toHoursDecimal } from "@/utils/date";
 
 const HF_CODE = "HORS_FORFAIT";
+const DEFAULT_PACKAGE_KEY = "__default__";
+
+type PackageDef = {
+  label?: string | null;
+  [k: string]: unknown;
+};
+
+type PackagesMap = Record<string, PackageDef>;
 
 // --- Helpers pour quota_max ---
 function decimalToHhMm(dec: number | null | undefined): string {
@@ -93,6 +101,9 @@ const RowSchema = z.object({
 
 const FormSchema = z.object({
   name: z.string().min(2).max(100),
+  // Clé du forfait (catalogue dans app_settings.packages).
+  // "__default__" = utiliser le forfait par défaut (ou aucun si non défini).
+  package_key: z.string().trim().min(1),
   mandates: z.array(RowSchema).refine(
     (arr) => {
       const active = arr.filter((m) => !m._delete);
@@ -119,10 +130,21 @@ export function EditClientDialog({
   const [open, setOpen] = useState(false);
   const [types, setTypes] = useState<MandateType[]>([]);
   const [initial, setInitial] = useState<Pivot[]>([]);
+  const [packages, setPackages] = useState<PackagesMap>({});
+  const [defaultPackageKey, setDefaultPackageKey] = useState<string | null>(
+    null,
+  );
+  const [initialPackageKey, setInitialPackageKey] = useState<string | null>(
+    null,
+  );
 
   const form = useForm<FormValues>({
     resolver: zodResolver(FormSchema),
-    defaultValues: { name: initialName, mandates: [] },
+    defaultValues: {
+      name: initialName,
+      package_key: DEFAULT_PACKAGE_KEY,
+      mandates: [],
+    },
     mode: "onBlur",
   });
 
@@ -136,14 +158,34 @@ export function EditClientDialog({
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const [{ data: t }, { data: pivots }] = await Promise.all([
-        supabase
-          .from("mandat_types")
-          .select("id, description, code")
-          .order("description"),
-        supabase.from("clients_mandats").select("*").eq("client_id", clientId),
-      ]);
+      const [{ data: t }, { data: pivots }, { data: clientRow }, { data: s }] =
+        await Promise.all([
+          supabase
+            .from("mandat_types")
+            .select("id, description, code")
+            .order("description"),
+          supabase
+            .from("clients_mandats")
+            .select("*")
+            .eq("client_id", clientId),
+          supabase
+            .from("clients")
+            .select("package_key")
+            .eq("id", clientId)
+            .single(),
+          supabase
+            .from("app_settings")
+            .select("packages, default_package_key")
+            .single(),
+        ]);
       setTypes(t ?? []);
+
+      setPackages((s?.packages as PackagesMap) ?? {});
+      setDefaultPackageKey((s?.default_package_key as string | null) ?? null);
+
+      const pkgRaw = (clientRow?.package_key as string | null) ?? null;
+      const pkg = pkgRaw && pkgRaw.trim() ? pkgRaw.trim() : null;
+      setInitialPackageKey(pkg);
 
       const all = (pivots ?? []) as Pivot[];
       setInitial(all);
@@ -163,11 +205,21 @@ export function EditClientDialog({
         } as const;
       });
 
+      const formPkg = pkg ?? DEFAULT_PACKAGE_KEY;
+
       replace(mapped);
-      form.reset({ name: initialName, mandates: mapped });
+      form.reset({ name: initialName, package_key: formPkg, mandates: mapped });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clientId]);
+
+  const packageEntries = Object.entries(packages)
+    .filter(([key]) => key !== defaultPackageKey)
+    .sort((a, b) => {
+      const la = (a[1]?.label ?? a[0]).toString().toLowerCase();
+      const lb = (b[1]?.label ?? b[0]).toString().toLowerCase();
+      return la.localeCompare(lb);
+    });
 
   // types restants disponibles (pas déjà actifs)
   const selectedActiveIds = form
@@ -194,11 +246,19 @@ export function EditClientDialog({
   };
 
   async function onSubmit(values: FormValues) {
-    // 1) Update client name if changed
-    if (values.name !== initialName) {
+    // 1) Update client (name / forfait)
+    const desiredPackageKey =
+      values.package_key === DEFAULT_PACKAGE_KEY ? null : values.package_key;
+
+    const clientPatch: Record<string, unknown> = {};
+    if (values.name !== initialName) clientPatch.name = values.name;
+    if (desiredPackageKey !== initialPackageKey)
+      clientPatch.package_key = desiredPackageKey;
+
+    if (Object.keys(clientPatch).length) {
       const { error } = await supabase
         .from("clients")
-        .update({ name: values.name })
+        .update(clientPatch)
         .eq("id", clientId);
       if (error) return; // TODO: toast error
     }
@@ -304,7 +364,9 @@ export function EditClientDialog({
       if (error) return;
     }
 
-    onUpdated?.({ name: values.name });
+    // Evite l'excess property check tout en gardant la compat avec les callbacks existants
+    const payload = { name: values.name, package_key: desiredPackageKey };
+    onUpdated?.(payload);
     setOpen(false);
   }
 
@@ -313,7 +375,12 @@ export function EditClientDialog({
       open={open}
       onOpenChange={(o) => {
         setOpen(o);
-        if (!o) form.reset({ name: initialName, mandates: [] });
+        if (!o)
+          form.reset({
+            name: initialName,
+            package_key: DEFAULT_PACKAGE_KEY,
+            mandates: [],
+          });
       }}
     >
       <DialogTrigger asChild>
@@ -344,6 +411,48 @@ export function EditClientDialog({
                   <FormMessage />
                 </FormItem>
               )}
+            />
+
+            {/* Forfait */}
+            <FormField
+              control={form.control}
+              name="package_key"
+              render={({ field }) => {
+                const defaultLabel = defaultPackageKey
+                  ? (packages?.[defaultPackageKey]?.label ?? defaultPackageKey)
+                  : null;
+
+                return (
+                  <FormItem>
+                    <FormLabel>Forfait</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="w-72">
+                          <SelectValue placeholder="Choisir…" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value={DEFAULT_PACKAGE_KEY}>
+                          {defaultLabel
+                            ? `Par défaut (${defaultLabel})`
+                            : "Par défaut"}
+                        </SelectItem>
+
+                        {packageEntries.length === 0 ? null : (
+                          <>
+                            {packageEntries.map(([key, def]) => (
+                              <SelectItem key={key} value={key}>
+                                {(def?.label ?? key) as string}
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
 
             {/* Ajouter un mandat */}
@@ -510,6 +619,7 @@ export function EditClientDialog({
                 onClick={() => {
                   form.reset({
                     name: initialName,
+                    package_key: DEFAULT_PACKAGE_KEY,
                     mandates: [],
                   });
                   setOpen(false);

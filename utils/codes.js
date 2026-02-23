@@ -4,6 +4,7 @@ export const MANDAT_CODE_LABELS = {
   ACC: "Accompagnement",
   SOU: "Soutien administratif",
   GES: "Gestion",
+  GEST: "Gestion",
 };
 
 export function translateMandatCode(code = null) {

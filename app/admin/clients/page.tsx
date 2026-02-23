@@ -1,1728 +1,1191 @@
-"use client";
+// ------------------------------------------------------------
+// page.tsx — Tableau simple (Clients -> Mandats + Équipe)
+// - Période par défaut : mois précédent complété (UTC)
+// - Plage personnalisée (optionnelle) : ?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Colonnes : Assigné (h) / Réel (h) / Taux
+// ------------------------------------------------------------
 
-import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
-import { useState, useEffect, useMemo, useReducer, Fragment } from "react";
-
+import { createClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
+import { CornerDownRight, Users } from "lucide-react";
+import { Fragment } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableFooter,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { ClientsDateRangePicker } from "@/components/admin/clients/ClientsDateRangePicker";
 import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+  HorsMandatDetailsDialog,
+  type HorsMandatEmployeeRow,
+} from "@/components/admin/clients/HorsMandatDetailsDialog";
+import Hint from "@/components/hint";
 
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Hint } from "@/components/hint";
-
-import type { DateRange } from "react-day-picker";
-
-import {
-  CalendarIcon,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  X,
-  CornerDownRight,
-} from "lucide-react";
-import {
-  format,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  subMonths,
-  subWeeks,
-  subDays,
-  endOfDay,
-} from "date-fns";
-import { frCA } from "date-fns/locale";
-
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useFieldArray } from "react-hook-form";
-import { EditClientDialog } from "@/components/admin/clients/EditClientDialog";
-import { MandatTimeEntriesDialog } from "@/components/admin/mandats/MandatTimeEntriesDialog";
-
-import { SearchFull } from "@/components/search-full";
-
-import Link from "next/link";
-import { cn } from "@/lib/cn";
-import { toHoursDecimal, formatHoursHuman } from "@/utils/date";
-import { translateMandatCode } from "@/utils/codes";
-
-function previousMonthRange() {
-  const prev = subMonths(new Date(), 1);
-  return { from: startOfMonth(prev), to: endOfMonth(prev) };
-}
-function previousCompletedWeekRange(now = new Date()) {
-  // semaine dim->sam (weekStartsOn: 0). Change à 1 si tu veux lun->dim.
-  const startThisWeek = startOfWeek(now, { weekStartsOn: 0 });
-  const from = subWeeks(startThisWeek, 1); // dimanche de la semaine précédente
-  const to = endOfDay(subDays(startThisWeek, 1)); // samedi dernier (fin de journée)
-  return { from, to };
-}
-// ------------------------
-// Helpers quota_max
-// ------------------------
-function decimalToHhMm(dec: number | null | undefined): string {
-  if (dec == null || !Number.isFinite(dec)) return "";
-  const total = Math.round(dec * 60);
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h${m.toString().padStart(2, "0")}`;
+// -------------------------------------------------
+// Helpers
+// -------------------------------------------------
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
 }
 
-function canonicalizeQuotaInput(raw: string): string {
-  const s = (raw ?? "").trim();
-  if (s === "") return "";
-  const dec = toHoursDecimal(s);
-  if (!Number.isFinite(dec)) return raw; // laisse l'erreur au validateur
-  return decimalToHhMm(dec);
+function fmtHours(h: number | null | undefined) {
+  if (h == null || !Number.isFinite(h)) return "—";
+  return `${h.toFixed(2)} h`;
 }
 
-function formatDateCA(d: Date): string {
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}-${mm}-${yyyy}`;
+function fmtMinsToHours(mins: number | null | undefined) {
+  if (mins == null || !Number.isFinite(mins)) return "—";
+  return fmtHours(mins / 60);
 }
 
-function formatRangeCA(from: Date, to: Date): string {
-  return `du ${formatDateCA(from)} au ${formatDateCA(to)}`;
+function fmtMoney(n: number | null | undefined, currency = "CAD") {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("fr-CA", {
+    style: "currency",
+    currency,
+  }).format(n);
 }
 
-function ymdLocal(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function fmtDateCA(d: Date) {
+  // jj-mm-aaaa basé sur UTC
+  return `${pad2(d.getUTCDate())}-${pad2(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`;
 }
 
-// Normalise: minuscules + supprime accents + trim
-const norm = (s: unknown) =>
-  String(s ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // retire diacritiques
-    .trim();
+function safeNum(n: unknown, fallback = 0) {
+  const v = typeof n === "number" ? n : Number(n);
+  return Number.isFinite(v) ? v : fallback;
+}
 
-// ------------------------
-// Zod schemas
-// ------------------------
-const MandateSelectionSchema = z.object({
-  id: z.number().optional(), // id pivot si existant (ici, création donc généralement absent)
-  mandat_type_id: z.number(),
-  billing_type: z.enum(["hourly", "monthly"]),
-  amount: z.number().nonnegative(),
-  // Saisie utilisateur en string (1h30, 1:30, 90m, 1.5)
-  quota_max: z
-    .string()
-    .trim()
-    .refine(
-      (v) => v === "" || !Number.isNaN(toHoursDecimal(v)),
-      "Format invalide (ex.: 1h30, 1:30, 90m, 1.5)",
-    ),
-});
+function ymd(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
 
-const newClientSchema = z.object({
-  name: z.string().min(2).max(100),
-  mandates: z
-    .array(MandateSelectionSchema)
-    .nonempty("Sélectionne au moins un mandat.")
-    .refine(
-      (arr) => new Set(arr.map((x) => x.mandat_type_id)).size === arr.length,
-      { message: "Les doublons de mandats ne sont pas permis." },
-    ),
-});
+function parseYMD(s: string | undefined): Date | null {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const da = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(da))
+    return null;
+  if (mo < 1 || mo > 12) return null;
+  if (da < 1 || da > 31) return null;
 
-const NewClientDialog = ({
-  onCreated,
-}: {
-  onCreated?: (client: any) => void;
-}) => {
-  const supabase = createClient();
-  const [isOpen, setIsOpen] = useState(false);
-  const [mandateTypes, setMandateTypes] = useState<
-    { id: number; description: string }[]
-  >([]);
+  // Interprétation en UTC (stable)
+  const dt = new Date(Date.UTC(y, mo - 1, da, 0, 0, 0, 0));
 
-  const form = useForm<z.infer<typeof newClientSchema>>({
-    resolver: zodResolver(newClientSchema),
-    defaultValues: { name: "", mandates: [] },
-    mode: "onSubmit",
-  });
-
-  const { fields, append, remove } = useFieldArray({
-    control: form.control,
-    name: "mandates",
-    keyName: "_key",
-  });
-
-  // Charger les types de mandat
-  useEffect(() => {
-    if (!isOpen) return;
-    (async () => {
-      const { data } = await supabase
-        .from("mandat_types")
-        .select("id, description")
-        .order("description", { ascending: true });
-      setMandateTypes(data ?? []);
-    })();
-  }, [isOpen, supabase]);
-
-  const mandates = form.watch("mandates");
-  const indexOfMandate = (id: number) =>
-    mandates.findIndex((m) => m.mandat_type_id === id);
-
-  // Toggle checkbox → ajoute/retire un bloc complet
-  const onToggleMandate = (id: number, checked: boolean) => {
-    const idx = indexOfMandate(id);
-    if (checked && idx === -1) {
-      append({
-        mandat_type_id: id,
-        billing_type: "hourly",
-        amount: 0,
-        quota_max: "", // ✅ saisie string, normalisée au blur
-      });
-    } else if (!checked && idx !== -1) {
-      remove(idx);
-    }
-  };
-
-  async function onSubmit(values: z.infer<typeof newClientSchema>) {
-    // 1) Créer le client
-    const { data: client, error: createErr } = await supabase
-      .from("clients")
-      .insert({ name: values.name })
-      .select()
-      .single();
-    if (createErr || !client) {
-      console.log("Erreur création client:", createErr);
-      return;
-    }
-
-    // 2) Insérer les liaisons enrichies (table pivot)
-    const rows = values.mandates.map((m) => {
-      const qDec = toHoursDecimal(m.quota_max);
-      return {
-        client_id: client.id,
-        mandat_type_id: m.mandat_type_id,
-        billing_type: m.billing_type,
-        amount: m.amount,
-        quota_max: Number.isFinite(qDec) ? qDec : null, // ✅ en décimal d'heures
-      };
-    });
-
-    const { error: linkErr } = await supabase
-      .from("clients_mandats")
-      .insert(rows);
-    if (linkErr) console.log("Erreur liaison mandats:", linkErr); // TODO: toast erreur
-
-    // 3) Remonter au parent (ex: pour rafraîchir la liste)
-    onCreated?.({ ...client, mandate_count: values.mandates.length });
-
-    // 4) Reset + fermer
-    form.reset({ name: "", mandates: [] });
-    setIsOpen(false);
+  // Validation (évite 2026-02-31)
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== mo - 1 ||
+    dt.getUTCDate() !== da
+  ) {
+    return null;
   }
+  return dt;
+}
 
-  return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(open) => {
-        setIsOpen(open);
-        if (!open) form.reset({ name: "", mandates: [] });
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button>Créer un client</Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-screen overflow-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Créer un client</DialogTitle>
-          <DialogDescription>
-            Sélectionne un ou plusieurs mandats et configure-les.
-          </DialogDescription>
-        </DialogHeader>
+function addDaysUTC(d: Date, days: number) {
+  const x = new Date(d);
+  x.setUTCDate(x.getUTCDate() + days);
+  return x;
+}
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-8">
-            {/* Nom */}
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Nom</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Liste des mandats disponibles (checkbox toggle) */}
-            <FormItem>
-              <FormLabel>Mandats disponibles</FormLabel>
-              <div className="mt-2 grid gap-2 max-h-56 overflow-auto pr-2">
-                {mandateTypes.map((m) => {
-                  const selected = indexOfMandate(m.id) !== -1;
-                  return (
-                    <label
-                      key={m.id}
-                      className="flex items-center gap-3 rounded-md border px-3 py-2"
-                    >
-                      <Checkbox
-                        checked={selected}
-                        onCheckedChange={(c) =>
-                          onToggleMandate(m.id, c === true)
-                        }
-                      />
-                      <span className="text-sm">{m.description}</span>
-                    </label>
-                  );
-                })}
-                {mandateTypes.length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    Aucun mandat disponible.
-                  </p>
-                )}
-              </div>
-            </FormItem>
-
-            {/* Éditions des mandats sélectionnés */}
-            {fields.length > 0 && (
-              <div className="grid gap-4">
-                <div className="text-sm font-semibold">
-                  Configurer les mandats sélectionnés
-                </div>
-
-                {fields.map((field, i) => {
-                  const mtype = mandateTypes.find(
-                    (m) => m.id === form.watch(`mandates.${i}.mandat_type_id`),
-                  );
-                  return (
-                    <div
-                      key={field._key}
-                      className="rounded-lg border p-4 grid gap-4 md:grid-cols-4"
-                    >
-                      {/* Libellé mandat */}
-                      <div className="md:col-span-4 -mb-2 text-sm font-medium">
-                        {mtype?.description ?? "Mandat"}
-                      </div>
-
-                      {/* Type (enum) */}
-                      <FormField
-                        control={form.control}
-                        name={`mandates.${i}.billing_type`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Type</FormLabel>
-                            <Select
-                              value={field.value}
-                              onValueChange={field.onChange}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Choisir…" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="hourly">Hourly</SelectItem>
-                                <SelectItem value="monthly">Monthly</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Montant */}
-                      <FormField
-                        control={form.control}
-                        name={`mandates.${i}.amount`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Montant</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                inputMode="decimal"
-                                step="0.01"
-                                value={
-                                  Number.isFinite(field.value as any)
-                                    ? (field.value as any)
-                                    : 0
-                                }
-                                onChange={(e) => {
-                                  const v = e.currentTarget.valueAsNumber;
-                                  field.onChange(Number.isFinite(v) ? v : 0);
-                                }}
-                              />
-                            </FormControl>
-                            <FormDescription>Ex.: 125.00</FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Quota max (UI string → décimal DB) */}
-                      <FormField
-                        control={form.control}
-                        name={`mandates.${i}.quota_max`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Quota max</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                type="text"
-                                inputMode="decimal"
-                                placeholder="ex.: 1h30 ou 90m"
-                                onChange={(e) => field.onChange(e.target.value)}
-                                onBlur={(e) =>
-                                  field.onChange(
-                                    canonicalizeQuotaInput(e.target.value),
-                                  )
-                                }
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              Formats: 1h30 · 1:30 · 90m · 1.5
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Retirer rapidement ce mandat */}
-                      <div className="flex items-end">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => remove(i)}
-                        >
-                          Retirer
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <Button type="submit" disabled={!form.formState.isDirty}>
-              Créer le client
-            </Button>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+function previousCompletedMonthBoundsUTC(now = new Date()) {
+  const start = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1, 0, 0, 0, 0),
   );
+  const endExclusive = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
+  );
+  const endInclusive = new Date(endExclusive.getTime() - 1);
+  return {
+    start,
+    endExclusive,
+    startYMD: ymd(start),
+    endYMD: ymd(endInclusive),
+    label: new Intl.DateTimeFormat("fr-CA", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(start),
+  };
+}
+
+function clampRangeToPast(bounds: { start: Date; endExclusive: Date }): {
+  start: Date;
+  endExclusive: Date;
+} {
+  // Empêche de sélectionner le futur (au-delà d'aujourd'hui UTC)
+  const now = new Date();
+  const todayStartUTC = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      0,
+      0,
+      0,
+      0,
+    ),
+  );
+  const maxEndExclusive = addDaysUTC(todayStartUTC, 1);
+  const start = bounds.start;
+  const endExclusive =
+    bounds.endExclusive > maxEndExclusive
+      ? maxEndExclusive
+      : bounds.endExclusive;
+  return { start, endExclusive };
+}
+
+function costFromMins(mins: number, rate: number) {
+  return (mins / 60) * rate;
+}
+
+function minsToHours(mins: number) {
+  return mins / 60;
+}
+
+function intrantForMandat(
+  minsForMandat: number,
+  billingType: string,
+  amount: number,
+) {
+  const bt = (billingType ?? "").toLowerCase();
+  if (!amount || amount <= 0) return 0;
+
+  if (bt === "monthly") return amount; // appliqué tel quel
+  // default hourly
+  return minsToHours(minsForMandat) * amount;
+}
+
+// -------------------------------------------------
+// Types (adapte si nécessaire)
+// -------------------------------------------------
+type BillingType = "hourly" | "monthly" | string;
+
+interface MandatTypeLite {
+  description?: string | null;
+  code?: string | null;
+}
+
+interface ClientMandat {
+  id: number;
+  client_id: number;
+  mandat_type_id: number;
+  amount: number | null; // hourly => $/h ; monthly => $/mois
+  quota_max: number | null; // heures assignées
+  billing_type: BillingType;
+  deleted_at: string | null;
+  type?: MandatTypeLite | null;
+}
+
+interface ProfileLite {
+  id: string;
+  full_name: string | null;
+  rate: number | null; // taux horaire interne
+}
+
+type TeamRole = "manager" | "assistant" | "helper" | string;
+
+const ROLE_LABEL: Record<string, string> = {
+  manager: "Chargé",
+  assistant: "Adjoint",
+  helper: "Soutien",
 };
 
-async function softDeleteClient(
-  supabase: ReturnType<typeof createClient>,
-  clientId: number,
-) {
-  const now = new Date().toISOString();
-  // 1) soft delete du client
-  const { error: e1 } = await supabase
-    .from("clients")
-    .update({ deleted_at: now })
-    .eq("id", clientId);
-  if (e1) throw e1;
-
-  // 2) (optionnel) soft delete des mandats encore actifs
-  const { error: e2 } = await supabase
-    .from("clients_mandats")
-    .update({ deleted_at: now })
-    .eq("client_id", clientId)
-    .is("deleted_at", null);
-  if (e2) throw e2;
+interface ClientTeam {
+  id: number;
+  client_id: number;
+  user_id: string;
+  role: TeamRole | null;
+  quota_max: number | null; // heures assignées
+  profile?: ProfileLite | null;
 }
 
-type SortDir = "asc" | "desc";
-type SortKey =
-  | "name"
-  | "mandatsCount"
-  | "quotaWeek"
-  | "assignedHours"
-  | "remainWeek"
-  | "remainMonth"
-  | "remain3"
-  | "remainRange"
-  | "membersCount";
-type SortState = { key: SortKey; dir: SortDir };
+interface ClientRow {
+  id: number;
+  name: string;
+  clients_mandats: ClientMandat[];
+  clients_team: ClientTeam[];
+}
 
-const COLUMNS = [
-  { id: "name", label: "Nom", sortKey: "name" },
-  { id: "quota_week", label: "Prévision", sortKey: "quotaWeek" },
-  { id: "assigned_hours", label: "Assigné", sortKey: "assignedHours" },
-  {
-    id: "week",
-    label: "Heures réelles",
-    subtitle: "7 derniers jours",
-    hint: "Selon les entrées de temps des membres de l'équipe.",
-    sortKey: "remainWeek",
-  },
-  {
-    id: "month",
-    label: "Heures réelles",
-    subtitle: "30 derniers jours",
-    hint: "Selon les entrées de temps des membres de l'équipe.",
-    sortKey: "remainMonth",
-  },
-  { id: "team", label: "Équipe", sortKey: "membersCount" },
-  { id: "actions", label: "", className: "w-0", srOnlyLabel: "Actions" },
-] as const;
+interface TimeEntry {
+  client_id: number;
+  doc: string; // timestamptz iso
+  deleted_at?: string | null;
+  billed_amount?: number | string | null; // heures décimales (ex: 1.25)
+  minutes?: number | null;
+  duration_min?: number | null;
+  hours?: number | null;
+  mandat_id?: number | null;
+  profile_id?: string | null;
+  user_id?: string | null;
+  employee_id?: string | null;
+  created_by?: string | null;
+}
 
-type Column =
-  | (typeof COLUMNS)[number]
-  | {
-      id: string;
-      label: string;
-      sortKey?: SortKey;
-      subtitle?: string;
-      hint?: string;
-      className?: string;
-      srOnlyLabel?: string;
-    };
+function getDurationMins(te: TimeEntry): number {
+  if (te.billed_amount != null) {
+    const h = Number(te.billed_amount);
+    if (Number.isFinite(h) && !Number.isNaN(h)) return Math.round(h * 60);
+  }
+  if (typeof te.minutes === "number" && !Number.isNaN(te.minutes))
+    return te.minutes;
+  if (typeof te.duration_min === "number" && !Number.isNaN(te.duration_min))
+    return te.duration_min;
+  if (typeof te.hours === "number" && !Number.isNaN(te.hours))
+    return Math.round(te.hours * 60);
+  return 0;
+}
 
-function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active) return <ArrowUpDown className="h-4 w-4 opacity-60" />;
-  return dir === "asc" ? (
-    <ArrowUp className="h-4 w-4" />
-  ) : (
-    <ArrowDown className="h-4 w-4" />
+function getEmployeeId(te: TimeEntry): string | null {
+  if (typeof te.profile_id === "string" && te.profile_id) return te.profile_id;
+  if (typeof te.user_id === "string" && te.user_id) return te.user_id;
+  if (typeof te.employee_id === "string" && te.employee_id)
+    return te.employee_id;
+  if (typeof te.created_by === "string" && te.created_by) return te.created_by;
+  return null;
+}
+
+function mandatRateLabel(m: ClientMandat) {
+  const bt = (m.billing_type ?? "").toLowerCase();
+  const amount = safeNum(m.amount, 0);
+  if (!amount) return "—";
+  return bt === "monthly" ? `${fmtMoney(amount)}/mo` : `${fmtMoney(amount)}/h`;
+}
+
+function clientRateSummary(mandats: ClientMandat[]) {
+  if (!mandats.length) return "—";
+
+  if (mandats.length === 1) return mandatRateLabel(mandats[0]);
+
+  const hourly = mandats.filter(
+    (m) => (m.billing_type ?? "").toLowerCase() === "hourly",
   );
-}
+  const monthly = mandats.filter(
+    (m) => (m.billing_type ?? "").toLowerCase() === "monthly",
+  );
 
-function HeaderCell({
-  col,
-  active,
-  dir,
-  onSort,
-}: {
-  col: Column;
-  active: boolean;
-  dir: SortDir;
-  onSort?: () => void;
-}) {
-  const ariaSort = !col.sortKey
-    ? "none"
-    : active
-      ? dir === "asc"
-        ? "ascending"
-        : "descending"
-      : "none";
+  const uniq = (vals: number[]) =>
+    Array.from(new Set(vals.map((x) => Number(x)))).filter((x) =>
+      Number.isFinite(x),
+    );
 
-  if (!col.sortKey) {
-    return (
-      <th
-        className={cn("px-3 py-2 whitespace-nowrap w-max", col.className)}
-        aria-sort={ariaSort as any}
-      >
-        {col.label ? (
-          <div className="flex flex-col">
-            <div className="inline-flex items-center gap-2">
-              <span className="whitespace-nowrap">{col.label}</span>
-              {col.hint && <Hint content={col.hint} />}
-            </div>
-            {col.subtitle && <span className="text-xs">{col.subtitle}</span>}
-          </div>
-        ) : (
-          <span className="sr-only">{col.srOnlyLabel ?? "Colonne"}</span>
-        )}
-      </th>
+  const hourlyAmounts = uniq(hourly.map((m) => safeNum(m.amount, NaN)));
+  const monthlyAmounts = uniq(monthly.map((m) => safeNum(m.amount, NaN)));
+
+  const parts: string[] = [];
+  if (hourly.length) {
+    parts.push(
+      hourlyAmounts.length === 1
+        ? `${fmtMoney(hourlyAmounts[0])}/h`
+        : `${hourly.length} mandats /h`,
+    );
+  }
+  if (monthly.length) {
+    parts.push(
+      monthlyAmounts.length === 1
+        ? `${fmtMoney(monthlyAmounts[0])}/mo`
+        : `${monthly.length} mandats /mo`,
     );
   }
 
-  return (
-    <th
-      className={cn(
-        "px-2 py-1 cursor-pointer select-none whitespace-nowrap w-max align-middle",
-        col.className,
-      )}
-      aria-sort={ariaSort as any}
-      onClick={onSort}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onSort?.();
-      }}
-    >
-      <div className=" px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
-        <div className="flex flex-col">
-          <div className="inline-flex items-center gap-2">
-            {col.hint && <Hint content={col.hint} />}
-            <span className="whitespace-nowrap">{col.label}</span>
-            <SortIcon active={active} dir={dir} />
-          </div>
-          {col.subtitle && (
-            <div className="text-xs flex justify-center">{col.subtitle}</div>
-          )}
-        </div>
-      </div>
-    </th>
-  );
+  if (!parts.length) return `${mandats.length} mandats`;
+  return parts.join(" • ");
 }
 
-const ClientPage = () => {
-  const supabase = useMemo(() => createClient(), []);
-  const [clients, setClients] = useState<any[]>([]);
-  const [q, setQ] = useState("");
+function applySocial(cost: number, socialCharge: number) {
+  return cost * socialCharge;
+}
 
-  // --- Filtre de plage (Heures réelles) ---
-  const [realRange, setRealRange] = useState<DateRange | undefined>(undefined);
-  const hasRealRange = Boolean(realRange?.from && realRange?.to);
+function profitClass(p: number) {
+  if (p > 0) return "text-emerald-700";
+  if (p < 0) return "text-red-700";
+  return "text-muted-foreground";
+}
 
-  const realRangeSubtitle = useMemo(() => {
-    if (!realRange?.from || !realRange?.to) return "";
-    return formatRangeCA(realRange.from, realRange.to);
-  }, [realRange?.from, realRange?.to]);
+// -------------------------------------------------
+// Chargement + agrégations (client / mandat / employé)
+// -------------------------------------------------
+async function loadData(rangeStartUTC: Date, rangeEndExclusiveUTC: Date) {
+  const supabase = await createClient();
 
-  const [hideArchived, setHideArchived] = useState(true);
-  type BillingFilter = "all" | "hourly" | "monthly";
-  const [billingFilter, setBillingFilter] = useState<BillingFilter>("all");
+  const { start, endExclusive } = clampRangeToPast({
+    start: rangeStartUTC,
+    endExclusive: rangeEndExclusiveUTC,
+  });
 
-  const columns = useMemo<Column[]>(() => {
-    if (!hasRealRange) return COLUMNS as unknown as Column[];
+  const startISO = start.toISOString();
+  const endISO = endExclusive.toISOString();
 
-    return [
-      COLUMNS[0], // name
-      COLUMNS[1], // quota_week
-      COLUMNS[2], // assigned_hours
-      {
-        id: "range",
-        label: "Heures facturées",
-        subtitle: realRangeSubtitle,
-        hint: "Selon les entrées de temps des membres de l'équipe.",
-        sortKey: "remainRange",
-      },
-      COLUMNS[5], // team  ✅ (au lieu de COLUMNS[6])
-      COLUMNS[6], // actions ✅ (au lieu de COLUMNS[7])
-    ];
-  }, [hasRealRange, realRangeSubtitle]);
+  // 0) Settings : social_charge
+  let socialCharge = 1;
+  {
+    const { data: sRow, error: sErr } = await supabase
+      .from("app_settings")
+      .select("social_charge")
+      .limit(1)
+      .maybeSingle();
 
-  const [sort, dispatchSort] = useReducer(
-    (s: SortState, a: { key: SortKey }): SortState =>
-      s.key === a.key
-        ? { key: s.key, dir: s.dir === "asc" ? "desc" : "asc" }
-        : { key: a.key, dir: a.key === "name" ? "asc" : "desc" },
-    { key: "name", dir: "asc" },
-  );
-
-  const onSortClick = (key: SortKey) => dispatchSort({ key });
-
-  // --- Filtre dates (shadcn Calendar) ---
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(
-    () => startOfWeek(new Date(), { weekStartsOn: 0 }), // 0 = dimanche (dim->sam)
-  );
-
-  const [dateTo, setDateTo] = useState<Date | undefined>(
-    () => endOfWeek(new Date(), { weekStartsOn: 0 }), // samedi
-  );
-  const [onlyWithHours, setOnlyWithHours] = useState(false);
-
-  // Map client_id -> total heures
-  const [hoursByClientId, setHoursByClientId] = useState<
-    Record<string, number>
-  >({});
-  const [hoursLoading, setHoursLoading] = useState(false);
-
-  const toISODate = (d?: Date) => (d ? format(d, "yyyy-MM-dd") : null);
-
-  type ClientCompleted = {
-    weekMin: number;
-    monthMin: number;
-    m3Min: number;
-    weeksMonth: number;
-    weeks3: number;
-  };
-
-  const [completedByClientId, setCompletedByClientId] = useState<
-    Record<string, ClientCompleted>
-  >({});
-  const [completedLoading, setCompletedLoading] = useState(false);
-
-  type ClientRange = {
-    rangeMin: number;
-    weeksRange: number;
-  };
-
-  const [rangeByClientId, setRangeByClientId] = useState<
-    Record<string, ClientRange>
-  >({});
-  const [rangeLoading, setRangeLoading] = useState(false);
-
-  type MandatCompleted = { weekMin: number; monthMin: number; m3Min: number };
-  type MandatRange = { rangeMin: number };
-
-  const [completedByMandatKey, setCompletedByMandatKey] = useState<
-    Record<string, MandatCompleted>
-  >({});
-
-  const [rangeByMandatKey, setRangeByMandatKey] = useState<
-    Record<string, MandatRange>
-  >({});
-
-  useEffect(() => {
-    const fetchClients = async () => {
-      const { data, error } = await supabase
-        .from("clients")
-        .select(
-          `*,
-            mandats_count:clients_mandats(count),
-            mandats:clients_mandats(*,
-              mandat_types(code)
-            ),
-            members_count:clients_team(count),
-            members:clients_team(
-              id,
-              role,
-              profiles (
-                id,
-                full_name,
-                email
-              )
-            ),
-            clients_team(*)`,
-        )
-        .is("mandats_count.deleted_at", null)
-        .is("mandats.deleted_at", null);
-
-      if (error) {
-        console.error("Error fetching clients:", error);
-        return;
-      }
-
-      const normalized = (data ?? []).map((c: any) => ({
-        ...c,
-        mandatsCount: c.mandats_count?.[0]?.count ?? 0,
-        membersCount: c.members_count?.[0]?.count ?? 0,
-      }));
-
-      setClients(normalized);
-    };
-
-    fetchClients();
-  }, [supabase]);
-
-  // --- Heures réelles par client via RPC (pas d'agrégats PostgREST) ---
-  useEffect(() => {
-    const fetchRealHours = async () => {
-      setHoursLoading(true);
-
-      const p_from = toISODate(dateFrom);
-      const p_to = toISODate(dateTo);
-
-      const { data, error } = await supabase.rpc("client_real_hours", {
-        p_from,
-        p_to,
-      });
-
-      if (error) {
-        console.error("Error fetching real hours (rpc):", error);
-        setHoursByClientId({});
-        setHoursLoading(false);
-        return;
-      }
-
-      const map: Record<string, number> = {};
-      for (const row of data ?? []) {
-        map[String((row as any).client_id)] = Number(
-          (row as any).total_hours ?? 0,
-        );
-      }
-
-      setHoursByClientId(map);
-      setHoursLoading(false);
-    };
-
-    fetchRealHours();
-  }, [supabase, dateFrom, dateTo]);
-
-  const filtered = useMemo(() => {
-    const query = norm(q);
-
-    let list = clients;
-
-    if (query) {
-      list = list.filter((c: any) => {
-        const name = c.name ?? "";
-        const hay = norm([name].join(" "));
-        return hay.includes(query);
-      });
+    const raw = Number((sRow as any)?.social_charge);
+    if (!sErr && Number.isFinite(raw) && raw > 0) {
+      socialCharge = raw > 0 && raw < 1 ? 1 + raw : raw;
     }
+  }
 
-    if (onlyWithHours) {
-      list = list.filter((c: any) => (hoursByClientId[String(c.id)] ?? 0) > 0);
-    }
-
-    if (hideArchived) {
-      list = list.filter((c: any) => !c.deleted_at);
-    }
-
-    if (billingFilter !== "all") {
-      list = list.filter((c: any) =>
-        (c.mandats ?? []).some((m: any) => m?.billing_type === billingFilter),
-      );
-    }
-
-    return list;
-  }, [q, clients, onlyWithHours, hoursByClientId, hideArchived, billingFilter]);
-
-  type DecoratedClient = {
-    client: any;
-    quotaWeek: number;
-    assignedHours: number;
-    realHours: number;
-    remainWeekMin: number;
-    remainMonthMin: number;
-    remainM3Min: number;
-    remainRangeMin: number;
-  };
-
-  const decoratedClients: DecoratedClient[] = useMemo(() => {
-    return filtered.map((client: any) => {
-      const quotaWeekHours = client.mandats
-        ? client.mandats.reduce(
-            (acc: number, mandat: any) => acc + (mandat.quota_max || 0),
-            0,
+  // 1) Clients + mandats + équipes
+  const { data: clientsData, error: clientsError } = await supabase
+    .from("clients")
+    .select(
+      `
+        id,
+        name,
+        clients_mandats(
+          id,
+          client_id,
+          mandat_type_id,
+          amount,
+          quota_max,
+          billing_type,
+          deleted_at,
+          type:mandat_types(
+            description,
+            code
           )
-        : 0;
-      const assignedHours = Array.isArray(client.clients_team)
-        ? client.clients_team.reduce((acc: number, row: any) => {
-            const v = Number(row?.quota_max ?? 0);
-            return acc + (Number.isFinite(v) ? v : 0);
-          }, 0)
-        : 0;
+        ),
+        clients_team(
+          id,
+          client_id,
+          user_id,
+          role,
+          quota_max,
+          profile:profiles(
+            id,
+            full_name,
+            rate
+          )
+        )
+      `,
+    )
+    .order("name", { ascending: true });
 
-      const quotaWeekMin = Math.round(quotaWeekHours * 60);
+  if (clientsError) {
+    return {
+      clients: [] as ClientRow[],
+      clientsError: clientsError.message,
+      start,
+      endExclusive,
+      startISO,
+      endISO,
+      aggRowsCount: 0,
 
-      const comp = completedByClientId[String(client.id)] ?? {
-        weekMin: 0,
-        monthMin: 0,
-        m3Min: 0,
-        weeksMonth: 0,
-        weeks3: 0,
-      };
+      socialCharge,
 
-      const quotaMonthMin = quotaWeekMin * comp.weeksMonth;
-      const quotaM3Min = quotaWeekMin * comp.weeks3;
+      minsByClient: new Map<number, number>(),
+      minsByClientHorsMandat: new Map<number, number>(),
+      minsByMandat: new Map<number, number>(),
+      minsByMandatEmployee: new Map<string, number>(),
+      minsByClientEmployee: new Map<string, number>(),
+      minsByClientEmployeeHorsMandat: new Map<string, number>(),
+      employeeInfoById: new Map<
+        string,
+        { full_name: string | null; rate: number | null }
+      >(),
+    };
+  }
 
-      const range = rangeByClientId[String(client.id)] ?? {
-        rangeMin: 0,
-        weeksRange: 0,
-      };
-      const quotaRangeMin = quotaWeekMin * (range.weeksRange ?? 0);
-      const remainRangeMin = quotaRangeMin - (range.rangeMin ?? 0);
+  const clients = ((clientsData as ClientRow[]) ?? []).map((c) => ({
+    ...c,
+    clients_mandats: (c.clients_mandats ?? []).filter((m) => !m.deleted_at),
+    clients_team: c.clients_team ?? [],
+  }));
 
-      return {
-        client,
-        quotaWeek: quotaWeekHours,
-        assignedHours,
-        realHours: hoursByClientId[String(client.id)] ?? 0,
-        remainWeekMin: quotaWeekMin - comp.weekMin,
-        remainMonthMin: quotaMonthMin - comp.monthMin,
-        remainM3Min: quotaM3Min - comp.m3Min,
-        remainRangeMin,
-      };
-    });
-  }, [filtered, hoursByClientId, completedByClientId, rangeByClientId]);
+  // 2) Seed infos employés depuis l’équipe
+  const employeeInfoById = new Map<
+    string,
+    { full_name: string | null; rate: number | null }
+  >();
 
-  const sortedClients = useMemo(() => {
-    const dirMul = sort.dir === "asc" ? 1 : -1;
+  for (const c of clients) {
+    for (const t of c.clients_team ?? []) {
+      const id = t.profile?.id;
+      if (!id) continue;
+      employeeInfoById.set(id, {
+        full_name: t.profile?.full_name ?? null,
+        rate: typeof t.profile?.rate === "number" ? t.profile.rate : null,
+      });
+    }
+  }
 
-    const cmpNum = (a: number, b: number) => (a - b) * dirMul;
-    const cmpStr = (a: string, b: string) => a.localeCompare(b, "fr") * dirMul;
+  // 3) RPC agrégée (minutes par client/mandat/employé)
+  const startYMD = startISO.slice(0, 10);
+  const endInclusive = new Date(endExclusive.getTime() - 1);
+  const endYMD = endInclusive.toISOString().slice(0, 10);
 
-    const arr = [...decoratedClients];
+  const { data: aggRaw, error: aggError } = await supabase.rpc(
+    "admin_time_entries_range_agg",
+    {
+      p_start: startYMD,
+      p_end: endYMD,
+      p_tz: "America/Montreal",
+    },
+  );
 
-    arr.sort((A, B) => {
-      let primary = 0;
+  if (aggError) {
+    return {
+      clients: [] as ClientRow[],
+      clientsError: aggError.message,
+      start,
+      endExclusive,
+      startISO,
+      endISO,
+      aggRowsCount: 0,
 
-      switch (sort.key) {
-        case "name":
-          primary = cmpStr(
-            String(A.client.name ?? ""),
-            String(B.client.name ?? ""),
+      socialCharge,
+
+      minsByClient: new Map<number, number>(),
+      minsByClientHorsMandat: new Map<number, number>(),
+      minsByMandat: new Map<number, number>(),
+      minsByMandatEmployee: new Map<string, number>(),
+      minsByClientEmployee: new Map<string, number>(),
+      minsByClientEmployeeHorsMandat: new Map<string, number>(),
+      employeeInfoById,
+    };
+  }
+
+  const agg = (aggRaw ?? []) as Array<{
+    client_id: number | string;
+    mandat_id: number | string | null;
+    employee_id: string | null; // = profile_id dans ta RPC
+    minutes: number | string;
+  }>;
+
+  const minsByClient = new Map<number, number>(); // AVEC mandat
+  const minsByClientHorsMandat = new Map<number, number>();
+  const minsByMandat = new Map<number, number>();
+  const minsByMandatEmployee = new Map<string, number>(); // `${mandatId}|${employeeId}`
+  const minsByClientEmployee = new Map<string, number>(); // `${clientId}|${employeeId}` AVEC mandat
+  const minsByClientEmployeeHorsMandat = new Map<string, number>();
+
+  const keyCE = (clientId: number, employeeId: string) =>
+    `${clientId}|${employeeId}`;
+  const keyME = (mandatId: number, employeeId: string) =>
+    `${mandatId}|${employeeId}`;
+
+  const employeeIds = new Set<string>();
+
+  for (const row of agg) {
+    const clientId = Number(row.client_id);
+    if (!Number.isFinite(clientId)) continue;
+
+    const mins = Number(row.minutes) || 0;
+    if (!mins) continue;
+
+    const eid = row.employee_id || null;
+    if (eid) employeeIds.add(eid);
+
+    const hasMandat = row.mandat_id != null;
+
+    if (hasMandat) {
+      minsByClient.set(clientId, (minsByClient.get(clientId) ?? 0) + mins);
+
+      const mandatId = Number(row.mandat_id);
+      if (Number.isFinite(mandatId)) {
+        minsByMandat.set(mandatId, (minsByMandat.get(mandatId) ?? 0) + mins);
+        if (eid) {
+          const k = keyME(mandatId, eid);
+          minsByMandatEmployee.set(
+            k,
+            (minsByMandatEmployee.get(k) ?? 0) + mins,
           );
-          break;
-        case "quotaWeek":
-          primary = cmpNum(A.quotaWeek, B.quotaWeek);
-          break;
-        case "assignedHours":
-          primary = cmpNum(A.assignedHours, B.assignedHours);
-          break;
-        case "membersCount":
-          primary = cmpNum(
-            Number(A.client.membersCount ?? 0),
-            Number(B.client.membersCount ?? 0),
-          );
-          break;
-        case "remainWeek":
-          primary = cmpNum(A.remainWeekMin, B.remainWeekMin);
-          break;
-        case "remainMonth":
-          primary = cmpNum(A.remainMonthMin, B.remainMonthMin);
-          break;
-        case "remain3":
-          primary = cmpNum(A.remainM3Min, B.remainM3Min);
-          break;
-        case "remainRange":
-          primary = cmpNum(A.remainRangeMin, B.remainRangeMin);
-          break;
-
-        default:
-          primary = 0;
+        }
       }
 
-      if (primary !== 0) return primary;
-
-      // Tie-breaker stable (toujours par nom asc)
-      return String(A.client.name ?? "").localeCompare(
-        String(B.client.name ?? ""),
-        "fr",
-      );
-    });
-
-    return arr;
-  }, [decoratedClients, sort]);
-
-  useEffect(() => {
-    const run = async () => {
-      if (!clients.length) return setCompletedByClientId({});
-
-      const clientIds = clients
-        .map((c: any) => Number(c.id))
-        .filter(Number.isFinite);
-      const as_of = format(new Date(), "yyyy-MM-dd");
-
-      const { data, error } = await supabase.rpc(
-        "admin_client_billed_totals_completed",
-        {
-          client_ids: clientIds,
-          as_of,
-          tz: "America/Montreal",
-        },
-      );
-
-      if (error) {
-        console.error("rpc admin_client_billed_totals_completed error", error);
-        setCompletedByClientId({});
-        return;
+      if (eid) {
+        const k = keyCE(clientId, eid);
+        minsByClientEmployee.set(k, (minsByClientEmployee.get(k) ?? 0) + mins);
       }
-
-      const map: Record<string, ClientCompleted> = {};
-      for (const row of data ?? []) {
-        const id = String((row as any).client_id);
-        map[id] = {
-          weekMin: Number((row as any).billed_week_min ?? 0),
-          monthMin: Number((row as any).billed_month_min ?? 0),
-          m3Min: Number((row as any).billed_3months_min ?? 0),
-          weeksMonth: Number((row as any).weeks_in_prev_month ?? 0),
-          weeks3: Number((row as any).weeks_in_prev_3months ?? 0),
-        };
-      }
-      setCompletedByClientId(map);
-    };
-
-    run();
-  }, [supabase, clients]);
-
-  useEffect(() => {
-    const run = async () => {
-      if (!clients.length) return setCompletedByMandatKey({});
-
-      const clientIds = clients
-        .map((c: any) => Number(c.id))
-        .filter(Number.isFinite);
-      const as_of = format(new Date(), "yyyy-MM-dd");
-
-      const { data, error } = await supabase.rpc(
-        "admin_client_mandat_billed_totals_completed",
-        { client_ids: clientIds, as_of, tz: "America/Montreal" },
+    } else {
+      minsByClientHorsMandat.set(
+        clientId,
+        (minsByClientHorsMandat.get(clientId) ?? 0) + mins,
       );
 
-      if (error) {
-        console.error(
-          "rpc admin_client_mandat_billed_totals_completed error",
-          error,
+      if (eid) {
+        const k = keyCE(clientId, eid);
+        minsByClientEmployeeHorsMandat.set(
+          k,
+          (minsByClientEmployeeHorsMandat.get(k) ?? 0) + mins,
         );
-        setCompletedByMandatKey({});
-        return;
       }
+    }
+  }
 
-      const map: Record<string, MandatCompleted> = {};
-      for (const row of data ?? []) {
-        const k = `${String((row as any).client_id)}:${String((row as any).mandat_id)}`;
-        map[k] = {
-          weekMin: Number((row as any).billed_week_min ?? 0),
-          monthMin: Number((row as any).billed_month_min ?? 0),
-          m3Min: Number((row as any).billed_3months_min ?? 0),
-        };
+  // 4) Complète infos employés manquantes (hors équipe)
+  const missingIds = Array.from(employeeIds).filter(
+    (id) => !employeeInfoById.has(id),
+  );
+  if (missingIds.length) {
+    const { data: profs, error: profErr } = await supabase
+      .from("profiles")
+      .select("id, full_name, rate")
+      .in("id", missingIds);
+
+    if (!profErr) {
+      for (const p of (profs ?? []) as Array<{
+        id: string;
+        full_name: string | null;
+        rate: number | null;
+      }>) {
+        if (!employeeInfoById.has(p.id)) {
+          employeeInfoById.set(p.id, { full_name: p.full_name, rate: p.rate });
+        } else {
+          // merge (au cas où)
+          const cur = employeeInfoById.get(p.id)!;
+          employeeInfoById.set(p.id, {
+            full_name: cur.full_name ?? p.full_name,
+            rate: cur.rate ?? p.rate,
+          });
+        }
       }
-      setCompletedByMandatKey(map);
-    };
+    }
+  }
 
-    run();
-  }, [supabase, clients]);
+  return {
+    clients,
+    clientsError: null as string | null,
+    start,
+    endExclusive,
+    startISO,
+    endISO,
+    aggRowsCount: agg.length,
 
-  // --- Heures facturées sur une plage (RPC) ---
-  useEffect(() => {
-    const run = async () => {
-      if (!hasRealRange || !realRange?.from || !realRange?.to) {
-        setRangeByClientId({});
-        setRangeLoading(false);
-        return;
-      }
-      if (!clients.length) {
-        setRangeByClientId({});
-        setRangeLoading(false);
-        return;
-      }
+    socialCharge,
 
-      setRangeLoading(true);
+    minsByClient,
+    minsByClientHorsMandat,
+    minsByMandat,
+    minsByMandatEmployee,
+    minsByClientEmployee,
+    minsByClientEmployeeHorsMandat,
+    employeeInfoById,
+  };
+}
 
-      const clientIds = clients
-        .map((c: any) => Number(c.id))
-        .filter(Number.isFinite);
+export default async function ClientsMandatsSimplePage({
+  searchParams,
+}: {
+  searchParams?: { from?: string; to?: string };
+}) {
+  const sp = (await searchParams) ?? {};
 
-      const range_start = ymdLocal(realRange.from);
-      const range_end = ymdLocal(realRange.to);
+  const defaultMonth = previousCompletedMonthBoundsUTC();
 
-      const { data, error } = await supabase.rpc(
-        "admin_client_billed_totals_range",
-        {
-          client_ids: clientIds,
-          range_start,
-          range_end,
-          tz: "America/Montreal",
-        },
-      );
+  const fromParam = typeof sp.from === "string" ? sp.from : undefined;
+  const toParam = typeof sp.to === "string" ? sp.to : undefined;
 
-      if (error) {
-        console.error("rpc admin_client_billed_totals_range error", error);
-        setRangeByClientId({});
-        setRangeLoading(false);
-        return;
-      }
+  const fromDate = parseYMD(fromParam);
+  const toDate = parseYMD(toParam);
 
-      const map: Record<string, ClientRange> = {};
-      for (const row of data ?? []) {
-        const id = String((row as any).client_id);
-        map[id] = {
-          rangeMin: Number((row as any).billed_range_min ?? 0),
-          weeksRange: Number((row as any).weeks_in_range ?? 0),
-        };
-      }
+  // Règle : si plage invalide / incomplète => mois précédent complété.
+  let rangeStartUTC = defaultMonth.start;
+  let rangeEndExclusiveUTC = defaultMonth.endExclusive;
 
-      setRangeByClientId(map);
-      setRangeLoading(false);
-    };
+  let rangeMode: "default" | "custom" = "default";
 
-    run();
-  }, [supabase, clients, hasRealRange, realRange?.from, realRange?.to]);
+  if (fromDate && toDate && fromDate <= toDate) {
+    rangeStartUTC = fromDate;
+    rangeEndExclusiveUTC = addDaysUTC(toDate, 1);
+    rangeMode = "custom";
+  }
 
-  useEffect(() => {
-    const run = async () => {
-      if (!hasRealRange || !realRange?.from || !realRange?.to) {
-        setRangeByMandatKey({});
-        return;
-      }
-      if (!clients.length) {
-        setRangeByMandatKey({});
-        return;
-      }
+  const data = await loadData(rangeStartUTC, rangeEndExclusiveUTC);
 
-      const clientIds = clients
-        .map((c: any) => Number(c.id))
-        .filter(Number.isFinite);
-      const range_start = ymdLocal(realRange.from);
-      const range_end = ymdLocal(realRange.to);
-
-      const { data, error } = await supabase.rpc(
-        "admin_client_mandat_billed_totals_range",
-        {
-          client_ids: clientIds,
-          range_start,
-          range_end,
-          tz: "America/Montreal",
-        },
-      );
-
-      if (error) {
-        console.error(
-          "rpc admin_client_mandat_billed_totals_range error",
-          error,
-        );
-        setRangeByMandatKey({});
-        return;
-      }
-
-      const map: Record<string, MandatRange> = {};
-      for (const row of data ?? []) {
-        const k = `${String((row as any).client_id)}:${String((row as any).mandat_id)}`;
-        map[k] = { rangeMin: Number((row as any).billed_range_min ?? 0) };
-      }
-      setRangeByMandatKey(map);
-    };
-
-    run();
-  }, [supabase, clients, hasRealRange, realRange?.from, realRange?.to]);
-
-  return (
-    <>
-      <div className="flex flex-col flex-1">
-        <div className="flex flex-col flex-1">
-          <div className="md:flex md:items-center md:justify-between border-b px-4 py-6 sm:px-6 lg:px-8">
-            <div className="flex-1 min-w-0">
-              <h1 className="sm:truncate sm:text-3xl dark:text-zinc-50 text-zinc-950 font-semibold">
-                Gestion des clients
-              </h1>
-            </div>
-            <div className="flex mt-4 md:mt-0 md:ml-4">
-              <NewClientDialog
-                onCreated={(client) => setClients((prev) => [...prev, client])}
-              />
-            </div>
+  if (data.clientsError) {
+    return (
+      <div className="p-4">
+        <div className="rounded border bg-white p-4">
+          <div className="font-medium">Erreur de chargement</div>
+          <div className="mt-2 text-sm text-muted-foreground">
+            {data.clientsError}
           </div>
-
-          <section className="flex flex-col flex-1">
-            <SearchFull
-              query={q}
-              setQuery={setQ}
-              placeholder="Rechercher un client..."
-            />
-
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="gap-2">
-                      <CalendarIcon className="h-4 w-4" />
-                      {hasRealRange && realRange?.from && realRange?.to
-                        ? `Plage: ${formatDateCA(realRange.from)} → ${formatDateCA(realRange.to)}`
-                        : "Plage personnalisée"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="p-2 w-auto">
-                    <Calendar
-                      mode="range"
-                      weekStartsOn={0}
-                      numberOfMonths={2}
-                      selected={realRange}
-                      onSelect={setRealRange}
-                      defaultMonth={realRange?.from}
-                    />
-                    <div className="px-2 pt-2 text-xs text-muted-foreground">
-                      Astuce : appuyer sur une date sélectionnée permet de la
-                      remettre à zéro.
-                    </div>
-                  </PopoverContent>
-                </Popover>
-
-                {hasRealRange && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setRealRange(undefined)}
-                    title="Effacer la plage"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-
-                {hasRealRange && rangeLoading && (
-                  <span className="text-xs text-muted-foreground">
-                    Calcul en cours…
-                  </span>
-                )}
-                <div className="flex items-center gap-2 text-sm">
-                  <Select
-                    value={billingFilter}
-                    onValueChange={(v) => setBillingFilter(v as BillingFilter)}
-                  >
-                    <SelectTrigger className="h-8 w-[170px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Tous</SelectItem>
-                      <SelectItem value="hourly">À l&apos;heure</SelectItem>
-                      <SelectItem value="monthly">Au mois</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <label className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
-                  <Checkbox
-                    checked={hideArchived}
-                    onCheckedChange={(v) => setHideArchived(v === true)}
-                  />
-                  <span>Masquer les clients archivés</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="w-full flex-1 flex flex-col gap-4">
-              <section className="flex-1">
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-left border-b text-sm bg-zinc-300 dark:bg-zinc-800 sticky top-16 h-4 z-5">
-                      {columns.map((col) => (
-                        <HeaderCell
-                          key={col.id}
-                          col={col}
-                          active={!!col.sortKey && sort.key === col.sortKey}
-                          dir={sort.dir}
-                          onSort={
-                            col.sortKey
-                              ? () => onSortClick(col.sortKey)
-                              : undefined
-                          }
-                        />
-                      ))}
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {sortedClients.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={columns.length}
-                          className="py-6 px-4 text-sm text-muted-foreground"
-                        >
-                          Aucun résultat pour « {q} ».
-                        </td>
-                      </tr>
-                    )}
-
-                    {sortedClients.map(({ client }, groupIndex) => {
-                      const striped = groupIndex % 2 === 1;
-                      const stripeBg = striped
-                        ? "bg-zinc-400/30 dark:bg-zinc-900/20"
-                        : "";
-                      const assignedHours = Array.isArray(client.clients_team)
-                        ? client.clients_team.reduce(
-                            (acc: number, row: any) => {
-                              const v = Number(row?.quota_max ?? 0);
-                              return acc + (Number.isFinite(v) ? v : 0);
-                            },
-                            0,
-                          )
-                        : 0;
-
-                      const quotaWeek = client.mandats
-                        ? client.mandats.reduce(
-                            (acc: number, mandat: any) =>
-                              acc + (mandat.quota_max || 0),
-                            0,
-                          )
-                        : 0;
-
-                      const quotaWeekHours = client.mandats
-                        ? client.mandats.reduce(
-                            (acc: number, mandat: any) =>
-                              acc + (mandat.quota_max || 0),
-                            0,
-                          )
-                        : 0;
-
-                      // quota semaine en minutes (entier)
-                      const quotaWeekMin = Math.round(quotaWeekHours * 60);
-
-                      const comp = completedByClientId[String(client.id)] ?? {
-                        weekMin: 0,
-                        monthMin: 0,
-                        m3Min: 0,
-                        weeksMonth: 0,
-                        weeks3: 0,
-                      };
-
-                      const quotaMonthMin = quotaWeekMin * comp.weeksMonth;
-                      const quotaM3Min = quotaWeekMin * comp.weeks3;
-
-                      const remainWeekMin = quotaWeekMin - comp.weekMin;
-                      const remainMonthMin = quotaMonthMin - comp.monthMin;
-                      const remainM3Min = quotaM3Min - comp.m3Min;
-
-                      const range = rangeByClientId[String(client.id)] ?? {
-                        rangeMin: 0,
-                        weeksRange: 0,
-                      };
-                      const quotaRangeMin =
-                        quotaWeekMin * (range.weeksRange ?? 0);
-                      const remainRangeMin =
-                        quotaRangeMin - (range.rangeMin ?? 0);
-
-                      const fmtMin = (min: number) =>
-                        formatHoursHuman(min / 60);
-
-                      const cellClass = (remainMin: number) =>
-                        cn(
-                          remainMin < 0
-                            ? "text-red-600 dark:text-red-300 font-medium"
-                            : remainMin > 0
-                              ? "text-green-600 dark:text-green-300 font-medium"
-                              : null,
-                        );
-
-                      return (
-                        <Fragment key={String(client.id)}>
-                          <tr
-                            key={client.id}
-                            className={cn(
-                              "text-sm border-t border-zinc-300 dark:border-zinc-800",
-                              stripeBg,
-                            )}
-                          >
-                            <td className="py-2 px-4 font-medium">
-                              <Link
-                                href={`/admin/clients/${client.id}`}
-                                className={cn(
-                                  client.deleted_at
-                                    ? "text-muted italic line-through"
-                                    : "underline",
-                                )}
-                              >
-                                {client.name}
-                                {client.deleted_at && <> (archivé)</>}
-                                <span className="sr-only">
-                                  , voir les détails
-                                </span>
-                              </Link>
-                            </td>
-
-                            <td className="py-2 px-4">
-                              {formatHoursHuman(quotaWeek)}
-                            </td>
-
-                            <td
-                              className={cn(
-                                "py-2 px-4",
-                                quotaWeek - assignedHours < 0
-                                  ? "text-red-600 dark:text-red-300 font-medium"
-                                  : quotaWeek - assignedHours > 0
-                                    ? "text-green-600 dark:text-green-300 font-medium"
-                                    : null, // = 0 => aucune classe de couleur
-                              )}
-                            >
-                              {formatHoursHuman(assignedHours)}
-                            </td>
-                            {hasRealRange ? (
-                              <td
-                                className={cn(
-                                  "py-2 px-4",
-                                  cellClass(remainRangeMin),
-                                )}
-                              >
-                                {/*rangeLoading ? (
-                                  <span className="text-muted-foreground">
-                                    …
-                                  </span>
-                                ) : (
-                                  <div className="leading-tight">
-                                    <div>
-                                      {fmtMin(remainRangeMin)} disponibles
-                                    </div>
-                                    <div className="text-xs text-muted-foreground font-normal">
-                                      fait: {fmtMin(range.rangeMin)} / quota:{" "}
-                                      {fmtMin(quotaRangeMin)}
-                                    </div>
-                                  </div>
-                                )*/}
-                              </td>
-                            ) : (
-                              <>
-                                <td
-                                  className={cn(
-                                    "py-2 px-4",
-                                    cellClass(remainWeekMin),
-                                  )}
-                                >
-                                  {/*completedLoading ? (
-                                    <span className="text-muted-foreground">
-                                      …
-                                    </span>
-                                  ) : (
-                                    <div className="leading-tight">
-                                      <div>
-                                        {fmtMin(remainWeekMin)} disponibles
-                                      </div>
-                                      <div className="text-xs text-muted-foreground font-normal">
-                                        fait: {fmtMin(comp.weekMin)} / quota:{" "}
-                                        {fmtMin(quotaWeekMin)}
-                                      </div>
-                                    </div>
-                                  )*/}
-                                </td>
-
-                                <td
-                                  className={cn(
-                                    "py-2 px-4",
-                                    cellClass(remainMonthMin),
-                                  )}
-                                >
-                                  {/*completedLoading ? (
-                                    <span className="text-muted-foreground">
-                                      …
-                                    </span>
-                                  ) : (
-                                    <div className="leading-tight">
-                                      <div>
-                                        {fmtMin(remainMonthMin)} disponibles
-                                      </div>
-                                      <div className="text-xs text-muted-foreground font-normal">
-                                        fait: {fmtMin(comp.monthMin)} / quota:{" "}
-                                        {fmtMin(quotaMonthMin)}
-                                      </div>
-                                    </div>
-                                  )*/}
-                                </td>
-                              </>
-                            )}
-
-                            <td className="py-2 px-4">
-                              {/* ton HoverCard existant inchangé */}
-                              {client.membersCount > 0 ? (
-                                <HoverCard>
-                                  <HoverCardTrigger asChild>
-                                    <button
-                                      type="button"
-                                      className="underline cursor-help text-left"
-                                      aria-label={`Voir les membres de ${client.name}`}
-                                    >
-                                      {client.membersCount}
-                                    </button>
-                                  </HoverCardTrigger>
-                                  <HoverCardContent className="max-w-xs text-sm">
-                                    <p className="font-medium mb-2">
-                                      {client.membersCount} membre
-                                      {client.membersCount > 1 ? "s" : ""} :
-                                    </p>
-                                    <ul className="space-y-1">
-                                      {client.members?.map((m: any) => (
-                                        <li key={m.id}>
-                                          {m.profiles?.full_name ??
-                                            m.profiles?.email ??
-                                            "Membre sans nom"}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </HoverCardContent>
-                                </HoverCard>
-                              ) : (
-                                <span className="text-muted-foreground">0</span>
-                              )}
-                            </td>
-
-                            <td className="py-2 px-4 flex gap-2 items-center">
-                              <EditClientDialog
-                                clientId={client.id}
-                                initialName={client.name}
-                                onUpdated={(patch) =>
-                                  setClients((prev) =>
-                                    prev.map((x: any) =>
-                                      x.id === client.id
-                                        ? { ...x, ...patch }
-                                        : x,
-                                    ),
-                                  )
-                                }
-                              />
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button variant="destructive" size="sm">
-                                    Supprimer
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>
-                                      Supprimer ce client ?
-                                    </AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Le client sera masqué.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>
-                                      Annuler
-                                    </AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={async () => {
-                                        try {
-                                          await softDeleteClient(
-                                            supabase,
-                                            client.id,
-                                          );
-                                          setClients((prev) =>
-                                            prev.filter(
-                                              (c: any) => c.id !== client.id,
-                                            ),
-                                          );
-                                        } catch (e) {
-                                          console.error(e);
-                                        }
-                                      }}
-                                    >
-                                      Confirmer
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </td>
-                          </tr>
-                          {/* sous-lignes mandats */}
-                          {(client.mandats ?? []).map((m: any) => {
-                            const mandatId = String(m.id);
-                            const k = `${String(client.id)}:${mandatId}`;
-
-                            // Quota mandat (par semaine) -> minutes
-                            const quotaWeekMin = Math.round(
-                              Number(m.quota_max ?? 0) * 60,
-                            );
-                            const quotaMonthMin =
-                              quotaWeekMin * (comp.weeksMonth ?? 0);
-                            const quotaM3Min =
-                              quotaWeekMin * (comp.weeks3 ?? 0);
-
-                            // Heures PLACÉES (assignées) sur ce mandat (clients_team)
-                            const assignedMandatHours = (
-                              client.clients_team ?? []
-                            )
-                              .filter(
-                                (r: any) => String(r.mandat_id) === mandatId,
-                              )
-                              .reduce(
-                                (acc: number, r: any) =>
-                                  acc + (Number(r.quota_max ?? 0) || 0),
-                                0,
-                              );
-                            const assignedMandatMin = Math.round(
-                              assignedMandatHours * 60,
-                            );
-
-                            // Heures FACTURÉES (time_entries) sur ce mandat
-                            const billed = completedByMandatKey[k] ?? {
-                              weekMin: 0,
-                              monthMin: 0,
-                              m3Min: 0,
-                            };
-                            const billedRangeMin =
-                              rangeByMandatKey[k]?.rangeMin ?? 0;
-
-                            // Restant (quota - facturé)
-                            const remainWeekMin = quotaWeekMin - billed.weekMin;
-                            const remainMonthMin =
-                              quotaMonthMin - billed.monthMin;
-                            const remainM3Min = quotaM3Min - billed.m3Min;
-
-                            const weeksRange = range.weeksRange ?? 0; // vient déjà de ton RPC range client
-                            const quotaRangeMin = quotaWeekMin * weeksRange;
-                            const remainRangeMin =
-                              quotaRangeMin - billedRangeMin;
-
-                            const mandatCode = m?.mandat_types?.code ?? null;
-                            const mandatLabel =
-                              mandatCode != null
-                                ? translateMandatCode(mandatCode)
-                                : `Mandat #${mandatId}`;
-
-                            return (
-                              <tr
-                                key={`${String(client.id)}:${mandatId}`}
-                                className={cn("text-xs", stripeBg)}
-                              >
-                                {/* Nom */}
-                                <td className="py-2 px-4">
-                                  <div className="pl-6 text-muted-foreground flex items-center gap-2">
-                                    <CornerDownRight
-                                      className="inline"
-                                      size={14}
-                                    />
-                                    {mandatLabel}
-                                  </div>
-                                </td>
-
-                                {/* Prévision (quota/semaine) */}
-                                <td className="py-2 px-4">
-                                  {formatHoursHuman(quotaWeekMin / 60)}
-                                </td>
-
-                                {/* Assigné (placé/semaine) */}
-                                <td className="py-2 px-4"></td>
-
-                                {/* Heures réelles (facturé) */}
-                                {hasRealRange ? (
-                                  <td
-                                    className={cn(
-                                      "py-2 px-4",
-                                      cellClass(remainRangeMin),
-                                    )}
-                                  >
-                                    <MandatTimeEntriesDialog
-                                      clientId={Number(client.id)}
-                                      title={`Entrées de temps — ${client.name}`}
-                                      range={
-                                        realRange?.from && realRange?.to
-                                          ? {
-                                              from: realRange.from,
-                                              to: realRange.to,
-                                            }
-                                          : undefined
-                                      }
-                                    >
-                                      <button
-                                        type="button"
-                                        className="w-full text-left hover:underline focus:outline-none"
-                                        title="Voir les entrées de temps"
-                                      >
-                                        <div className="leading-tight">
-                                          <div>
-                                            {fmtMin(remainRangeMin)} disponibles
-                                          </div>
-                                          <div className="text-xs text-muted-foreground font-normal">
-                                            fait: {fmtMin(range.rangeMin)} /
-                                            quota: {fmtMin(quotaRangeMin)}
-                                          </div>
-                                        </div>
-                                      </button>
-                                    </MandatTimeEntriesDialog>
-                                  </td>
-                                ) : (
-                                  <>
-                                    <td
-                                      className={cn(
-                                        "py-2 px-4",
-                                        cellClass(remainWeekMin),
-                                      )}
-                                    >
-                                      <MandatTimeEntriesDialog
-                                        mandatId={Number(m.id)}
-                                        clientId={Number(client.id)}
-                                        title={`Entrées de temps — ${mandatLabel} (semaine précédente complétée)`}
-                                        range={previousCompletedWeekRange()}
-                                      >
-                                        <button
-                                          type="button"
-                                          className="w-full text-left hover:underline focus:outline-none"
-                                          title="Voir les entrées de temps"
-                                        >
-                                          <div className="leading-tight">
-                                            <div>
-                                              {fmtMin(remainWeekMin)}{" "}
-                                              disponibles
-                                            </div>
-                                            <div className="text-xs text-muted-foreground font-normal">
-                                              fait: {fmtMin(billed.weekMin)} /
-                                              quota: {fmtMin(quotaWeekMin)}
-                                            </div>
-                                          </div>
-                                        </button>
-                                      </MandatTimeEntriesDialog>
-                                    </td>
-
-                                    <td
-                                      className={cn(
-                                        "py-2 px-4",
-                                        cellClass(remainMonthMin),
-                                      )}
-                                    >
-                                      <MandatTimeEntriesDialog
-                                        mandatId={Number(m.id)}
-                                        clientId={Number(client.id)}
-                                        title={`Entrées de temps — ${mandatLabel} (mois dernier)`}
-                                        range={previousMonthRange()}
-                                      >
-                                        <button
-                                          type="button"
-                                          className="w-full text-left hover:underline focus:outline-none"
-                                          title="Voir les entrées de temps"
-                                        >
-                                          <div className="leading-tight">
-                                            <div>
-                                              {fmtMin(remainMonthMin)}{" "}
-                                              disponibles
-                                            </div>
-                                            <div className="text-xs text-muted-foreground font-normal">
-                                              fait: {fmtMin(billed.monthMin)} /
-                                              quota: {fmtMin(quotaMonthMin)}
-                                            </div>
-                                          </div>
-                                        </button>
-                                      </MandatTimeEntriesDialog>
-                                    </td>
-                                  </>
-                                )}
-
-                                {/* Nb membres (facultatif) */}
-                                <td className="py-2 px-4 text-muted-foreground"></td>
-
-                                {/* Actions */}
-                                <td className="py-2 px-4" />
-                              </tr>
-                            );
-                          })}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </section>
-            </div>
-          </section>
         </div>
       </div>
-    </>
-  );
-};
+    );
+  }
 
-export default ClientPage;
+  const effectiveFrom = data.start;
+  const effectiveToInclusive = new Date(data.endExclusive.getTime() - 1);
+
+  const defaultFromYMD =
+    rangeMode === "custom" ? ymd(effectiveFrom) : defaultMonth.startYMD;
+  const defaultToYMD =
+    rangeMode === "custom" ? ymd(effectiveToInclusive) : defaultMonth.endYMD;
+
+  const socialCharge = Number(data.socialCharge) || 1;
+
+  // Totaux assignés
+  let totalMandatQuotaH = 0;
+  let totalTeamQuotaH = 0;
+
+  // Totaux réel (minutes)
+  let totalRealMinsWith = 0;
+  let totalRealMinsHors = 0;
+
+  // Totaux $ (coûtant/intrant)
+  let totalIntrant = 0;
+  let totalBaseCost = 0;
+
+  for (const c of data.clients) {
+    const mandats = c.clients_mandats ?? [];
+    const team = c.clients_team ?? [];
+
+    totalMandatQuotaH += mandats.reduce(
+      (acc, m) => acc + safeNum(m.quota_max, 0),
+      0,
+    );
+    totalTeamQuotaH += team.reduce(
+      (acc, t) => acc + safeNum(t.quota_max, 0),
+      0,
+    );
+
+    totalRealMinsWith += data.minsByClient.get(c.id) ?? 0;
+    totalRealMinsHors += data.minsByClientHorsMandat.get(c.id) ?? 0;
+
+    // Intrant = somme par mandat (hourly: mins*rate ; monthly: amount)
+    for (const m of mandats) {
+      const mMins = data.minsByMandat.get(m.id) ?? 0;
+      const amount = Number(m.amount) || 0;
+      totalIntrant += intrantForMandat(
+        mMins,
+        String(m.billing_type ?? ""),
+        amount,
+      );
+    }
+  }
+
+  // Coûtant total = somme sur toutes les clés client|employé (avec + hors mandat)
+  for (const [k, mins] of data.minsByClientEmployee.entries()) {
+    const employeeId = k.split("|")[1];
+    const rate =
+      safeNum(data.employeeInfoById?.get(employeeId)?.rate ?? null, 0) ||
+      safeNum(data.rateByEmployee?.get(employeeId) ?? 0, 0);
+
+    if (rate > 0 && mins > 0) totalBaseCost += costFromMins(mins, rate);
+  }
+
+  for (const [k, mins] of data.minsByClientEmployeeHorsMandat.entries()) {
+    const employeeId = k.split("|")[1];
+    const rate =
+      safeNum(data.employeeInfoById?.get(employeeId)?.rate ?? null, 0) ||
+      safeNum(data.rateByEmployee?.get(employeeId) ?? 0, 0);
+
+    if (rate > 0 && mins > 0) totalBaseCost += costFromMins(mins, rate);
+  }
+
+  const totalCost = totalBaseCost > 0 ? totalBaseCost * socialCharge : 0;
+  const totalProfit = totalIntrant - totalCost;
+
+  const totalRealMins = totalRealMinsWith + totalRealMinsHors;
+
+  return (
+    <div className="flex flex-col flex-1">
+      <div className="md:flex md:items-center md:justify-between border-b px-4 py-6 sm:px-6 lg:px-8">
+        <div className="flex-1 min-w-0">
+          <h1 className="sm:truncate sm:text-3xl dark:text-zinc-50 text-zinc-950 font-semibold">
+            Bible
+          </h1>
+        </div>
+      </div>
+
+      <section className="flex flex-col flex-1">
+        {/* Barre filtre période (simple GET form) */}
+        <div className="p-4">
+          <ClientsDateRangePicker
+            defaultFrom={defaultFromYMD}
+            defaultTo={defaultToYMD}
+          />
+        </div>
+
+        {/* Tableau imbriqué */}
+        <div className="border">
+          <Table>
+            <TableHeader>
+              <TableRow className="sticky top-16 bg-zinc-300 dark:bg-zinc-800 border-b">
+                <TableHead className="min-w-[360px]">
+                  Client / Mandat / Employé
+                </TableHead>
+                <TableHead className="w-[120px]">
+                  <div className="flex items-center gap-1">Assigné (h)</div>
+                </TableHead>
+                <TableHead className="w-[120px]">
+                  <div className="flex items-center gap-1">Réel (h)</div>
+                </TableHead>
+                <TableHead className="w-[120px]">
+                  <div className="flex items-center gap-1">Taux ($)</div>
+                </TableHead>
+                <TableHead className="w-[140px]">
+                  <div className="flex items-center gap-1">
+                    <Hint
+                      content={
+                        "Total des frais selon le taux horaire des employés et leurs heures facturées pour le client"
+                      }
+                    />
+                    Coûtant ($)
+                  </div>
+                </TableHead>
+                <TableHead className="flex items-center w-[140px]">
+                  <div className="flex items-center gap-1">
+                    <Hint
+                      content={
+                        "Total de ce que le client rapport par mois ou par heure"
+                      }
+                    />
+                    Intrant ($)
+                  </div>
+                </TableHead>
+                <TableHead className="w-[140px]">
+                  <div className="flex items-center gap-1">
+                    <Hint
+                      content={"Différence entre le Coûtant et l'Intrant"}
+                    />
+                    Profit ($)
+                  </div>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+
+            <TableBody>
+              {data.clients.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="py-10 text-center text-sm text-muted-foreground"
+                  >
+                    Aucun client.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+
+              {data.clients.map((c) => {
+                const mandats = c.clients_mandats ?? [];
+                const team = c.clients_team ?? [];
+
+                const mandatQuotaH = mandats.reduce(
+                  (acc, m) => acc + safeNum(m.quota_max, 0),
+                  0,
+                );
+                const teamQuotaH = team.reduce(
+                  (acc, t) => acc + safeNum(t.quota_max, 0),
+                  0,
+                );
+
+                const clientWith = data.minsByClient.get(c.id) ?? 0;
+                const clientHors = data.minsByClientHorsMandat.get(c.id) ?? 0;
+                const clientTotal = clientWith + clientHors;
+                const socialCharge = Number(data.socialCharge) || 1;
+
+                // coût client = somme (mins employé * rate)
+                // coût client = somme (mins employé * rate) * social_charge
+                let clientBaseCost = 0;
+
+                for (const t of c.clients_team ?? []) {
+                  const pid = t.profile?.id;
+                  if (!pid) continue;
+
+                  const withM =
+                    data.minsByClientEmployee.get(`${c.id}|${pid}`) ?? 0;
+                  const horsM =
+                    data.minsByClientEmployeeHorsMandat.get(`${c.id}|${pid}`) ??
+                    0;
+                  const empTotal = withM + horsM;
+
+                  const rate =
+                    t.profile?.rate ?? data.rateByEmployee.get(pid) ?? 0;
+
+                  if (rate > 0 && empTotal > 0) {
+                    clientBaseCost += costFromMins(empTotal, rate);
+                  }
+                }
+
+                const clientCost =
+                  clientBaseCost > 0 ? clientBaseCost * socialCharge : 0;
+
+                // Intrant
+                let clientIntrant = 0;
+                for (const m of mandats) {
+                  const mMins = data.minsByMandat.get(m.id) ?? 0;
+                  const amount = Number(m.amount) || 0;
+                  clientIntrant += intrantForMandat(
+                    mMins,
+                    String(m.billing_type ?? ""),
+                    amount,
+                  );
+                }
+
+                const clientProfit = clientIntrant - clientCost;
+
+                // Ordre : mandats, puis équipe (rôle)
+                const teamSorted = [...team].sort((a, b) => {
+                  const ra = a.role ?? "";
+                  const rb = b.role ?? "";
+                  const wa =
+                    ra === "manager"
+                      ? 0
+                      : ra === "assistant"
+                        ? 1
+                        : ra === "helper"
+                          ? 2
+                          : 9;
+                  const wb =
+                    rb === "manager"
+                      ? 0
+                      : rb === "assistant"
+                        ? 1
+                        : rb === "helper"
+                          ? 2
+                          : 9;
+                  return wa - wb;
+                });
+
+                const horsRows = Array.from(
+                  data.minsByClientEmployeeHorsMandat.entries(),
+                )
+                  .filter(([k, mins]) => k.startsWith(`${c.id}|`) && mins > 0)
+                  .map(([k, mins]) => {
+                    const employeeId = k.split("|")[1];
+
+                    const info = data.employeeInfoById?.get(employeeId);
+                    const fullName = info?.full_name ?? employeeId;
+
+                    const rate =
+                      (typeof info?.rate === "number" ? info.rate : null) ??
+                      data.rateByEmployee.get(employeeId) ??
+                      0;
+
+                    const hours = mins / 60;
+                    const baseCost = rate > 0 ? hours * rate : 0;
+                    const costWithSocial =
+                      baseCost > 0 ? baseCost * socialCharge : 0;
+
+                    return {
+                      employee_id: employeeId,
+                      full_name: fullName,
+                      hours,
+                      rate,
+                      base_cost: baseCost,
+                      cost_with_social: costWithSocial,
+                    };
+                  })
+                  .sort(
+                    (a, b) =>
+                      (b.cost_with_social ?? 0) - (a.cost_with_social ?? 0),
+                  );
+
+                // Total hors mandat = somme des coûts avec charges
+                const horsCost = horsRows.reduce(
+                  (acc, r) => acc + (r.cost_with_social || 0),
+                  0,
+                );
+                const horsProfit = 0 - horsCost;
+
+                return (
+                  <Fragment key={c.id}>
+                    {/* Client */}
+                    <TableRow className="bg-zinc-300/50 dark:bg-zinc-900/50">
+                      <TableCell className="font-medium text-overflow overflow-ellipsis">
+                        {c.name}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">{fmtHours(mandatQuotaH)}</div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {fmtMinsToHours(clientTotal)}
+                      </TableCell>
+
+                      <TableCell className="text-sm">
+                        {clientRateSummary(mandats)}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {clientCost > 0 ? fmtMoney(clientCost) : "—"}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {clientIntrant > 0 ? fmtMoney(clientIntrant) : "—"}
+                      </TableCell>
+                      <TableCell
+                        className={cn("font-medium", profitClass(clientProfit))}
+                      >
+                        {clientIntrant > 0 || clientCost > 0
+                          ? fmtMoney(clientProfit)
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Mandats */}
+                    {mandats.map((m) => {
+                      const mins = data.minsByMandat.get(m.id) ?? 0;
+
+                      /* coutant mandat */
+                      let mandatCost = 0;
+                      for (const t of c.clients_team ?? []) {
+                        const pid = t.profile?.id;
+                        if (!pid) continue;
+
+                        const minsEmpOnMandat =
+                          data.minsByMandatEmployee.get(`${m.id}|${pid}`) ?? 0;
+                        const rate =
+                          t.profile?.rate ?? data.rateByEmployee.get(pid) ?? 0;
+
+                        if (rate > 0 && minsEmpOnMandat > 0) {
+                          mandatCost += costFromMins(minsEmpOnMandat, rate);
+                        }
+                      }
+
+                      // Intrant
+                      const mandatIntrant = intrantForMandat(
+                        mins,
+                        String(m.billing_type ?? ""),
+                        Number(m.amount) || 0,
+                      );
+
+                      const mandatProfit = mandatIntrant - mandatCost;
+
+                      return (
+                        <TableRow key={`mandat-${m.id}`}>
+                          <TableCell className="pl-8">
+                            <div className="flex items-center gap-2 text-sm">
+                              <CornerDownRight
+                                size={16}
+                                className="text-muted-foreground"
+                              />
+                              <span className="text-muted-foreground">
+                                {m.type?.description ??
+                                  `Mandat #${m.mandat_type_id}`}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {fmtHours(safeNum(m.quota_max, 0))}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {fmtMinsToHours(mins)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {mandatRateLabel(m)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {mandatCost > 0 ? fmtMoney(mandatCost) : "—"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {mandatIntrant > 0 ? fmtMoney(mandatIntrant) : "—"}
+                          </TableCell>
+                          <TableCell
+                            className={cn("text-sm", profitClass(mandatProfit))}
+                          >
+                            {mandatIntrant > 0 || mandatCost > 0
+                              ? fmtMoney(mandatProfit)
+                              : "—"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+
+                    {clientHors > 0 ? (
+                      <TableRow
+                        key={`hors-mandats-${c.id}`}
+                        className="bg-red-50 dark:bg-red-500/20"
+                      >
+                        <TableCell className="pl-8">
+                          <div className="flex items-center gap-2 text-sm text-red-700">
+                            <CornerDownRight size={16} className="opacity-70" />
+                            <span className="font-medium">Hors mandat</span>
+                          </div>
+                        </TableCell>
+
+                        {/* Assigné (h) */}
+                        <TableCell className="text-sm text-red-700">
+                          —
+                        </TableCell>
+
+                        {/* Réel (h) */}
+                        <TableCell className="text-sm font-medium text-red-700">
+                          {fmtMinsToHours(clientHors)}
+                        </TableCell>
+
+                        {/* Taux */}
+                        <TableCell className="text-sm text-red-700">
+                          —
+                        </TableCell>
+                        <TableCell className="text-sm font-medium text-red-700">
+                          {horsCost > 0 ? (
+                            <HorsMandatDetailsDialog
+                              triggerLabel={fmtMoney(horsCost)}
+                              clientName={c.name}
+                              socialCharge={socialCharge}
+                              rows={horsRows}
+                            />
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-red-700">
+                          —
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-sm font-medium",
+                            profitClass(horsProfit),
+                          )}
+                        >
+                          {horsCost > 0 ? fmtMoney(horsProfit) : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+
+                    {/* Équipe */}
+                    {teamSorted.map((t) => {
+                      const pid = t.profile?.id ?? t.user_id;
+
+                      const withM = pid
+                        ? (data.minsByClientEmployee.get(`${c.id}|${pid}`) ?? 0)
+                        : 0;
+                      const horsM = pid
+                        ? (data.minsByClientEmployeeHorsMandat.get(
+                            `${c.id}|${pid}`,
+                          ) ?? 0)
+                        : 0;
+                      const empTotal = withM + horsM;
+
+                      const rate = t.profile?.id
+                        ? (t.profile?.rate ??
+                          data.rateByEmployee.get(t.profile.id) ??
+                          0)
+                        : 0;
+
+                      const empBaseCost =
+                        rate > 0 ? costFromMins(empTotal, rate) : 0;
+
+                      const empCost =
+                        empBaseCost > 0
+                          ? applySocial(empBaseCost, data.socialCharge)
+                          : 0;
+
+                      let empIntrant = 0;
+                      for (const m of mandats) {
+                        const bt = String(m.billing_type ?? "").toLowerCase();
+                        if (bt !== "hourly") continue; // monthly non réparti
+                        const minsEmpOnMandat =
+                          data.minsByMandatEmployee.get(`${m.id}|${pid}`) ?? 0;
+                        const amount = Number(m.amount) || 0;
+                        if (amount > 0 && minsEmpOnMandat > 0) {
+                          empIntrant += minsToHours(minsEmpOnMandat) * amount;
+                        }
+                      }
+
+                      const empProfit = empIntrant - empCost;
+
+                      const roleLabel = t.role
+                        ? (ROLE_LABEL[t.role] ?? t.role)
+                        : "—";
+
+                      return (
+                        <TableRow key={`team-${t.id}-${t.user_id}`}>
+                          <TableCell className="pl-8">
+                            <div className="flex items-center gap-2 text-sm">
+                              <Users
+                                size={16}
+                                className="text-muted-foreground"
+                              />
+                              <span className="text-muted-foreground">
+                                {t.profile?.full_name ??
+                                  `Employé #${t.user_id}`}
+                              </span>
+                              <Badge className="ml-1">{roleLabel}</Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-sm",
+                              safeNum(t.quota_max, 0) <= 0 &&
+                                "text-muted-foreground",
+                            )}
+                          >
+                            {fmtHours(safeNum(t.quota_max, 0))}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {fmtMinsToHours(empTotal)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {rate ? `${fmtMoney(rate)}/h` : "—"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {rate > 0 && empTotal > 0 ? fmtMoney(empCost) : "—"}
+                          </TableCell>
+                          <TableCell className="text-sm">{"—"}</TableCell>
+                          <TableCell>{"—"}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+            <TableFooter>
+              <TableRow className="bg-zinc-100">
+                <TableCell className="font-medium">TOTAL</TableCell>
+
+                <TableCell>
+                  <div className="text-sm font-medium">
+                    {fmtHours(totalMandatQuotaH)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Équipe : {fmtHours(totalTeamQuotaH)}
+                  </div>
+                </TableCell>
+
+                <TableCell className="font-medium">
+                  {fmtMinsToHours(totalRealMins)}
+                  {totalRealMinsHors > 0 ? (
+                    <div className="text-xs text-red-700">
+                      {fmtMinsToHours(totalRealMinsHors)} (inclus)
+                    </div>
+                  ) : null}
+                </TableCell>
+
+                <TableCell className="text-sm text-muted-foreground">
+                  —
+                </TableCell>
+
+                <TableCell className="font-medium">
+                  {totalCost > 0 ? fmtMoney(totalCost) : "—"}
+                </TableCell>
+
+                <TableCell className="font-medium">
+                  {totalIntrant > 0 ? fmtMoney(totalIntrant) : "—"}
+                </TableCell>
+
+                <TableCell
+                  className={cn("font-medium", profitClass(totalProfit))}
+                >
+                  {totalIntrant > 0 || totalCost > 0
+                    ? fmtMoney(totalProfit)
+                    : "—"}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
+        </div>
+      </section>
+    </div>
+  );
+}

@@ -141,8 +141,6 @@ export function MandatTimeEntriesDialog({
       const fromYmd = ymdLocal(effectiveRange.from);
       const toYmd = ymdLocal(effectiveRange.to);
 
-      // NOTE: si ta colonne de date s'appelle autrement que "date",
-      // remplace le filtre gte/lte et l'order ci-dessous (ex: "day", "entry_date", etc.)
       let q = supabase
         .from("time_entries")
         .select(
@@ -199,9 +197,6 @@ export function MandatTimeEntriesDialog({
         setProfilesById({});
       }
 
-      // si ta table n'est pas "services", tu peux:
-      // - changer ici le nom de table
-      // - ou simplement afficher service_id (fallback déjà géré)
       if (serviceIds.length) {
         const { data: sData } = await supabase
           .from("clients_services")

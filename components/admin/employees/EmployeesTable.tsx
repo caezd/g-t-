@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/popover";
 
 import { SearchFull } from "@/components/search-full";
-import { Hint } from "@/components/hint";
 import EditEmployeeDialog from "./EditEmployeeDialog";
 
 import {
@@ -35,30 +34,22 @@ import {
 import { type Employee } from "@/components/admin/employees/EditEmployeeDialog";
 import { formatHoursHuman } from "@/utils/date";
 
-/* ------------------------------ Types & const ----------------------------- */
-
-type Settings = { base_allowance_hours?: number };
+/* ------------------------------ Types & consts ----------------------------- */
 
 type SortDir = "asc" | "desc";
+
 type SortKey =
   | "matricule"
   | "full_name"
   | "availability"
-  | "availabilityRemain"
-  | "rate"
-  | "realHourlyRate"
-  | "realRateCost"
-  | "internalCost"
-  | "emptyCost"
-  | "created_at"
   | "status"
-  | "internal_week"
-  | "internal_month"
-  | "internal_range";
+  | "real_7"
+  | "real_30"
+  | "real_range";
 type SortState = { key: SortKey; dir: SortDir };
 
 type Column = {
-  id: string; // ✅ unique
+  id: string;
   label: string;
   hint?: string;
   subtitle?: string;
@@ -75,7 +66,7 @@ type Worked = {
   weeksMonth: number;
   weeks3: number;
 
-  // ✅ internes (client_id = 0)
+  // ⚠️ on ne les affiche plus, mais elles peuvent rester incluses dans “Facturé”
   weekInternalMin: number;
   monthInternalMin: number;
   m3InternalMin: number;
@@ -84,7 +75,7 @@ type Worked = {
   rangeMin?: number;
   weeksRange?: number;
 
-  // ✅ interne sur plage
+  // ⚠️ idem
   rangeInternalMin?: number;
 };
 
@@ -115,54 +106,74 @@ function formatDateCA(d: Date): string {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = d.getFullYear();
-  return `${dd}-${mm}-${yyyy}`;
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-function formatRangeCA(from: Date, to: Date): string {
-  return `du ${formatDateCA(from)} au ${formatDateCA(to)}`;
+function formatRangeCA(from?: Date, to?: Date) {
+  if (!from || !to) return "";
+  return `${formatDateCA(from)} → ${formatDateCA(to)}`;
 }
 
-const toNumber = (v: unknown): number | null => {
+function toNumber(v: unknown): number | null {
   if (v == null) return null;
-  if (typeof v === "string") {
-    const t = v.trim();
-    if (t === "") return null;
-    const n = Number(t.replace(",", "."));
-    return Number.isFinite(n) ? n : null;
-  }
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  return null;
-};
+  const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
 
-// normalise rôle/actif venant de supabase (string/number → bool/“admin|user”)
-const normalise = (
-  e: Employee,
-): Employee & { role: string; is_active: boolean } => {
-  const role = (e.role ?? "user").toString().toLowerCase();
-  const isActive =
-    (e as any).is_active === true ||
-    (e as any).is_active === 1 ||
-    (e as any).is_active === "true" ||
-    (e as any).is_active === "1";
-  return { ...e, role, is_active: Boolean(isActive) };
-};
+function startOfWeekSunday(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - x.getDay()); // 0 = dimanche
+  return x;
+}
 
-/* ---------------------------- Metrics & rows ------------------------------ */
+function endOfWeekSaturday(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() + (6 - x.getDay())); // 6 = samedi
+  return x;
+}
+
+function weeksSpanned(from: Date, to: Date) {
+  const a = startOfWeekSunday(from).getTime();
+  const b = endOfWeekSaturday(to).getTime();
+  const days = Math.round((b - a) / 86400000);
+  return Math.max(1, Math.floor(days / 7) + 1);
+}
+
+function prevMonthWeeks(asOf: Date) {
+  const prev = new Date(asOf);
+  prev.setHours(0, 0, 0, 0);
+  prev.setDate(1);
+  prev.setMonth(prev.getMonth() - 1);
+
+  const start = new Date(prev);
+  const end = new Date(prev);
+  end.setMonth(end.getMonth() + 1);
+  end.setDate(0); // dernier jour du mois précédent
+
+  return weeksSpanned(start, end);
+}
+
+/* -------------------------------- Metrics -------------------------------- */
 
 type Metrics = {
   clientsQuota: number;
   quotaMax: number | null;
   remainingQuota: number | null;
-
-  // (optionnel) gardé pour ne pas casser ton code existant
-  rate?: number | null;
+  rate: number | null;
 };
+
 type DecoratedEmployee = {
   e: Employee & { role: string; is_active: boolean };
   m: Metrics;
 };
 
-function computeMetrics(e: Employee, settings: Settings): Metrics {
+type Settings = {
+  base_allowance_hours?: number;
+};
+
+function computeMetrics(e: Employee, _settings: Settings): Metrics {
   const clientsQuota =
     (e as any).clients_team?.reduce(
       (acc: number, ct: any) => acc + (toNumber(ct?.quota_max) ?? 0),
@@ -172,7 +183,6 @@ function computeMetrics(e: Employee, settings: Settings): Metrics {
   const quotaMax = toNumber((e as any).quota_max);
   const remainingQuota = quotaMax != null ? quotaMax - clientsQuota : null;
 
-  // best-effort (si tu as un champ différent, ajuste ici)
   const rate =
     toNumber((e as any).rate) ??
     toNumber((e as any).hourly_rate) ??
@@ -186,6 +196,8 @@ function computeMetrics(e: Employee, settings: Settings): Metrics {
   };
 }
 
+/* ------------------------------ Small UI bits ----------------------------- */
+
 function GroupHeader({
   icon,
   title,
@@ -198,7 +210,7 @@ function GroupHeader({
   colSpan: number;
 }) {
   return (
-    <tr className="bg-background  bg-zinc-300/50 dark:bg-zinc-900/50">
+    <tr className="bg-background bg-zinc-100 dark:bg-zinc-950 border-b">
       <td colSpan={colSpan} className="px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -251,10 +263,13 @@ function HeaderCell({
       >
         <div className="flex flex-col items-center">
           <div className="inline-flex items-center gap-2">
-            <span className="whitespace-nowrap">{col.label}</span>
-            {col.hint && <Hint content={col.hint} />}
+            <span className="font-semibold">{col.label}</span>
           </div>
-          {col.subtitle && <span className="text-xs">{col.subtitle}</span>}
+          {col.subtitle && (
+            <span className="text-[11px] text-muted-foreground">
+              {col.subtitle}
+            </span>
+          )}
         </div>
       </th>
     );
@@ -263,25 +278,19 @@ function HeaderCell({
   return (
     <th
       className={cn(
-        "px-2 py-1 cursor-pointer select-none whitespace-nowrap w-max align-middle items-center",
+        "px-2 py-1 cursor-pointer select-none whitespace-nowrap w-max ",
         col.className,
       )}
       aria-sort={ariaSort as any}
       onClick={onSort}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onSort?.();
-      }}
     >
-      <div className="flex flex-col items-center">
-        <div className="inline-flex gap-2 px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
-          {col.hint && <Hint content={col.hint} />}
-          <span className="whitespace-nowrap">{col.label}</span>
+      <div className="flex flex-col ">
+        <div className="inline-flex gap-2">
+          <span className="font-semibold">{col.label}</span>
           <SortIcon active={active} dir={dir} />
         </div>
         {col.subtitle && (
-          <span className="text-xs px-2 flex justify-center">
+          <span className="inline-flex text-[11px] text-muted-foreground">
             {col.subtitle}
           </span>
         )}
@@ -290,64 +299,50 @@ function HeaderCell({
   );
 }
 
+/* ------------------------------- Normalizer ------------------------------- */
+
+function normalise(raw: any): Employee & { role: string; is_active: boolean } {
+  return {
+    ...raw,
+    role: raw?.role ?? "user",
+    is_active: raw?.is_active ?? true,
+  };
+}
+
+/* ------------------------------- Row Component ---------------------------- */
+
 function EmployeeRow({
   e,
   m,
-  settings,
   worked,
   hasCustomRange,
 }: {
   e: DecoratedEmployee["e"];
   m: Metrics;
-  settings: Settings;
   worked: Worked;
   hasCustomRange: boolean;
 }) {
-  const base = settings?.base_allowance_hours ?? 0;
-
   const quotaEffectifMax = m.quotaMax != null ? (m.quotaMax ?? 0) : null;
   const remainingEffectif = m.quotaMax != null ? (m.remainingQuota ?? 0) : null;
 
   const displayRemainingHours = remainingEffectif;
   const quotaWeek = m.quotaMax != null ? (m.quotaMax ?? 0) : null;
 
-  // Convertit minutes -> heures (décimal) pour ton formatHoursHuman
-  const billedWeekH = worked.weekMin / 60;
-  const billedMonthH = worked.monthMin / 60;
+  // ✅ “Facturé” inclut les heures internes (même si on n'affiche plus les colonnes internes)
+  const billedWeekH = (worked.weekMin + worked.weekInternalMin) / 60;
+  const billedMonthH = (worked.monthMin + worked.monthInternalMin) / 60;
+  const billedRangeH =
+    ((worked.rangeMin ?? 0) + (worked.rangeInternalMin ?? 0)) / 60;
 
-  // quotas “mois complété” et “3 mois complétés” = quota/semaine * nb semaines (entier)
   const quotaMonth =
     quotaWeek != null ? quotaWeek * (worked.weeksMonth ?? 0) : null;
 
-  // disponibles = quota - fait
   const remainWeek = quotaWeek != null ? quotaWeek - billedWeekH : null;
   const remainMonth = quotaMonth != null ? quotaMonth - billedMonthH : null;
 
-  // --- plage personnalisée
-  const billedRangeH = (worked.rangeMin ?? 0) / 60;
   const quotaRange =
     quotaWeek != null ? quotaWeek * (worked.weeksRange ?? 0) : null;
   const remainRange = quotaRange != null ? quotaRange - billedRangeH : null;
-
-  const billedWeekInternalH = worked.weekInternalMin / 60;
-  const billedMonthInternalH = worked.monthInternalMin / 60;
-  const billedRangeInternalH = (worked.rangeInternalMin ?? 0) / 60;
-
-  // ✅ quotas internes basés sur la base * nb semaines
-  const quotaInternalWeek = base; // base = quota interne par semaine
-  const quotaInternalMonth = base * (worked.weeksMonth ?? 0); // détecte 4 ou 5 semaines
-  const quotaInternalRange = base * (worked.weeksRange ?? 0);
-
-  // Comparaison en minutes (robuste)
-  const quotaInternalWeekMin = Math.round(quotaInternalWeek * 60);
-  const quotaInternalMonthMin = Math.round(quotaInternalMonth * 60);
-  const quotaInternalRangeMin = Math.round(quotaInternalRange * 60);
-
-  const internalTdClass = (billedMin: number, quotaMin: number) =>
-    cn(
-      "px-4 py-2",
-      billedMin > quotaMin ? "text-red-600 dark:text-red-400 font-medium" : "",
-    );
 
   const realCellClass = (v: number | null) =>
     cn(
@@ -361,8 +356,6 @@ function EmployeeRow({
 
   return (
     <tr className="border-b text-sm last:border-b-0">
-      <td className="px-4 py-2 font-mono">{(e as any).matricule ?? "—"}</td>
-
       <td className="px-4 py-2">
         <div className="font-medium truncate">
           <Link className="underline" href={`/admin/employees/${e.id}`}>
@@ -392,24 +385,6 @@ function EmployeeRow({
 
       {hasCustomRange ? (
         <>
-          {/* Interne (plage) */}
-          <td
-            className={internalTdClass(
-              Number(worked.rangeInternalMin ?? 0),
-              quotaInternalRangeMin,
-            )}
-          >
-            <div className="leading-tight">
-              <div>{formatHoursHuman(billedRangeInternalH)}</div>
-              <div className="text-xs text-muted-foreground font-normal">
-                fait: {formatHoursHuman(billedRangeInternalH)} / quota:{" "}
-                {formatHoursHuman(quotaInternalRange)}{" "}
-                {worked.weeksRange ? `(${worked.weeksRange} sem.)` : ""}
-              </div>
-            </div>
-          </td>
-
-          {/* Facturé (plage) */}
           <td className={realCellClass(remainRange)}>
             {remainRange == null ? (
               "Illimité"
@@ -426,23 +401,6 @@ function EmployeeRow({
         </>
       ) : (
         <>
-          {/* Interne semaine */}
-          <td
-            className={internalTdClass(
-              worked.weekInternalMin,
-              quotaInternalWeekMin,
-            )}
-          >
-            <div className="leading-tight">
-              <div>{formatHoursHuman(billedWeekInternalH)}</div>
-              <div className="text-xs text-muted-foreground font-normal">
-                fait: {formatHoursHuman(billedWeekInternalH)} / quota:{" "}
-                {formatHoursHuman(quotaInternalWeek)}
-              </div>
-            </div>
-          </td>
-
-          {/* Facturé semaine */}
           <td className={realCellClass(remainWeek)}>
             {remainWeek == null ? (
               "Illimité"
@@ -457,23 +415,6 @@ function EmployeeRow({
             )}
           </td>
 
-          {/* Interne mois */}
-          <td
-            className={internalTdClass(
-              worked.monthInternalMin,
-              quotaInternalMonthMin,
-            )}
-          >
-            <div className="leading-tight">
-              <div>{formatHoursHuman(billedMonthInternalH)}</div>
-              <div className="text-xs text-muted-foreground font-normal">
-                fait: {formatHoursHuman(billedMonthInternalH)} / quota:{" "}
-                {formatHoursHuman(quotaInternalMonth)}
-              </div>
-            </div>
-          </td>
-
-          {/* Facturé mois */}
           <td className={realCellClass(remainMonth)}>
             {remainMonth == null ? (
               "Illimité"
@@ -489,14 +430,6 @@ function EmployeeRow({
           </td>
         </>
       )}
-
-      <td className="px-4 py-2 text-sm">
-        {e.is_active ? (
-          <Badge>Actif</Badge>
-        ) : (
-          <Badge variant="outline">Inactif</Badge>
-        )}
-      </td>
 
       <td className="text-right px-4 py-2">
         <EditEmployeeDialog employee={e} />
@@ -518,18 +451,8 @@ export default function EmployeesTable({
     ? (initialData as Employee[])
     : [];
 
-  // Recherche
   const [q, setQ] = useState("");
 
-  // Filtres (groupes + bornes)
-  const [showAdmins, setShowAdmins] = useState(true);
-  const [showUsers, setShowUsers] = useState(true);
-  const [showInactive, setShowInactive] = useState(true);
-  const [minRate, setMinRate] = useState<string>("");
-  const [maxRate, setMaxRate] = useState<string>("");
-  const [minAvail, setMinAvail] = useState<string>("");
-
-  // Plage personnalisée (heures réelles)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const hasCustomRange = Boolean(dateRange?.from && dateRange?.to);
 
@@ -540,80 +463,51 @@ export default function EmployeesTable({
 
   const COLUMNS: Column[] = useMemo(() => {
     const base: Column[] = [
-      { id: "matricule", label: "Matricule", sortKey: "matricule" },
       { id: "nom", label: "Nom", sortKey: "full_name" },
       {
         id: "availability",
-        label: "Disponibilité",
+        label: "Assigné",
         hint: "Quota d'heures maximal par semaine. Prévision des heures restants selon la disponibilité par semaine et les assignations d'équipes.",
         sortKey: "availability",
       },
     ];
 
-    const internalWeek: Column = {
-      id: "internal_week",
-      label: "Interne",
-      hint: "Heures internes (client 0) – dernière semaine complétée (dim→sam)",
-      subtitle: "Semaine dernière",
-    };
-
     const billedWeek: Column = {
       id: "real_7",
-      label: "Facturé",
-      hint: "Semaine dernière",
+      label: "Travaillé",
+      hint: "Semaine dernière (inclut les heures internes)",
       subtitle: "Semaine dernière",
-      sortKey: "real_7" as any,
-    };
-
-    const internalMonth: Column = {
-      id: "internal_month",
-      label: "Interne",
-      hint: "Heures internes (client 0) – mois civil précédent complet",
-      subtitle: "Mois dernier",
+      sortKey: "real_7",
     };
 
     const billedMonth: Column = {
       id: "real_30",
-      label: "Facturé",
-      hint: "Mois complété (mois civil précédent)",
+      label: "Travaillé",
+      hint: "Mois dernier (inclut les heures internes)",
       subtitle: "Mois dernier",
-      sortKey: "real_30" as any,
-    };
-
-    const internalRange: Column = {
-      id: "internal_range",
-      label: "Interne",
-      hint: "Heures internes (client 0) – période personnalisée",
-      subtitle: rangeSubtitle,
+      sortKey: "real_30",
     };
 
     const billedRange: Column = {
       id: "real_range",
-      label: "Facturé",
-      hint: "Période personnalisée",
+      label: "Travaillé",
+      hint: "Période personnalisée (inclut les heures internes)",
       subtitle: rangeSubtitle,
-      sortKey: "real_7" as any,
+      sortKey: "real_range",
     };
 
-    const tail: Column[] = [
-      {
-        id: "status",
-        label: "Statut",
-        hint: "Actif vs inactif",
-        sortKey: "status",
-      },
-      { id: "actions", label: "", className: "w-0" },
-    ];
+    const tail: Column = {
+      id: "",
+      label: "",
+    };
 
-    // ✅ Ordre demandé
     const middle: Column[] = hasCustomRange
-      ? [internalRange, billedRange]
-      : [internalWeek, billedWeek, internalMonth, billedMonth];
+      ? [billedRange]
+      : [billedWeek, billedMonth];
 
-    return [...base, ...middle, ...tail];
+    return [...base, ...middle, tail];
   }, [hasCustomRange, rangeSubtitle]);
 
-  // tri
   const [sort, dispatchSort] = useReducer(
     (s: SortState, a: { key: SortKey }): SortState =>
       s.key === a.key
@@ -624,17 +518,6 @@ export default function EmployeesTable({
 
   const onSortClick = (key: SortKey) => dispatchSort({ key });
 
-  const clearFilters = () => {
-    setShowAdmins(true);
-    setShowUsers(true);
-    setShowInactive(true);
-    setMinRate("");
-    setMaxRate("");
-    setMinAvail("");
-    // volontairement: ne touche pas la plage personnalisée
-  };
-
-  /* 1) Recherche texte */
   const searched = useMemo(() => {
     const query = q.trim().toLowerCase();
     if (!query) return SAFE_DATA;
@@ -652,7 +535,6 @@ export default function EmployeesTable({
     });
   }, [q, SAFE_DATA]);
 
-  /* 2) Normalisation + métriques */
   const decorated: DecoratedEmployee[] = useMemo(
     () =>
       searched.map((raw) => {
@@ -662,109 +544,26 @@ export default function EmployeesTable({
     [searched, settings],
   );
 
-  /* 3) Filtres bornes + groupes visibles */
-  const _minRate = toNumber(minRate);
-  const _maxRate = toNumber(maxRate);
-  const _minAvail = toNumber(minAvail);
+  // ✅ pas de filtres additionnels : tous les employés du select restent affichés
+  const filtered = useMemo(() => decorated, [decorated]);
 
-  const filtered = useMemo(() => {
-    return decorated.filter(({ e, m }) => {
-      const group = !e.is_active
-        ? "inactive"
-        : e.role === "admin"
-          ? "admins"
-          : "users";
-      if (group === "admins" && !showAdmins) return false;
-      if (group === "users" && !showUsers) return false;
-      if (group === "inactive" && !showInactive) return false;
-
-      if (_minRate != null && (m.rate == null || m.rate < _minRate))
-        return false;
-      if (_maxRate != null && (m.rate == null || m.rate > _maxRate))
-        return false;
-
-      if (
-        _minAvail != null &&
-        (m.remainingQuota == null || m.remainingQuota < _minAvail)
-      )
-        return false;
-
-      return true;
-    });
-  }, [
-    decorated,
-    showAdmins,
-    showUsers,
-    showInactive,
-    _minRate,
-    _maxRate,
-    _minAvail,
-  ]);
-
-  /* 4) Tri global puis partition */
-  const collator = useMemo(
-    () => new Intl.Collator("fr", { numeric: true, sensitivity: "base" }),
-    [],
-  );
-
-  const sorted = useMemo(() => {
-    const arr = [...filtered];
-    arr.sort((a, b) => {
-      const dir = sort.dir === "asc" ? 1 : -1;
-
-      const num = (v: unknown, fallback: number) => toNumber(v) ?? fallback;
-      const txt = (v: unknown) => (v ?? "") as string;
-
-      switch (sort.key) {
-        case "matricule":
-          return dir * collator.compare(txt(a.e.matricule), txt(b.e.matricule));
-        case "full_name":
-          return dir * collator.compare(txt(a.e.full_name), txt(b.e.full_name));
-        case "availability":
-          return (
-            dir *
-            (num(a.m.remainingQuota, Number.NEGATIVE_INFINITY) -
-              num(b.m.remainingQuota, Number.NEGATIVE_INFINITY))
-          );
-        case "status":
-          return dir * ((a.e.is_active ? 1 : 0) - (b.e.is_active ? 1 : 0));
-        default:
-          return 0;
-      }
-    });
-    return arr;
-  }, [filtered, sort.key, sort.dir, collator]);
-
-  const admins = useMemo(
-    () => sorted.filter(({ e }) => e.is_active && e.role === "admin"),
-    [sorted],
-  );
-  const users = useMemo(
-    () => sorted.filter(({ e }) => e.is_active && e.role !== "admin"),
-    [sorted],
-  );
-  const inactive = useMemo(
-    () => sorted.filter(({ e }) => !e.is_active),
-    [sorted],
-  );
-
-  const nothing =
-    admins.length === 0 && users.length === 0 && inactive.length === 0;
-
-  /* Worked (RPC) */
+  // ✅ IMPORTANT: workedByEmployee DOIT être déclaré avant tout tri qui l'utilise
   const [workedByEmployee, setWorkedByEmployee] = useState<
     Record<string, Worked>
   >({});
 
+  const getWorked = (id: string) => workedByEmployee[id] ?? WORKED_ZERO;
+
+  // ids stables (évite de relancer les RPC si le tri change)
   const employeeIds = useMemo(
-    () => sorted.map((x) => String(x.e.id)).filter(Boolean),
-    [sorted],
+    () => filtered.map(({ e }) => String(e.id)),
+    [filtered],
   );
 
-  const idsKey = useMemo(
-    () => [...employeeIds].sort().join(","),
-    [employeeIds],
-  );
+  const idsKey = useMemo(() => {
+    const ids = [...employeeIds].sort();
+    return ids.join("|");
+  }, [employeeIds]);
 
   const rangeKey = useMemo(() => {
     if (!dateRange?.from || !dateRange?.to) return "";
@@ -772,17 +571,21 @@ export default function EmployeesTable({
   }, [dateRange?.from, dateRange?.to]);
 
   useEffect(() => {
+    const supabase = createClient();
+
     const run = async () => {
-      if (!idsKey) {
+      if (!employeeIds.length) {
         setWorkedByEmployee({});
         return;
       }
 
-      const supabase = createClient();
+      const asOf = new Date();
+      const monthWeeks = prevMonthWeeks(asOf);
 
       if (hasCustomRange && dateRange?.from && dateRange?.to) {
         const rangeStart = ymdLocal(dateRange.from);
         const rangeEnd = ymdLocal(dateRange.to);
+        const rangeWeeks = weeksSpanned(dateRange.from, dateRange.to);
 
         const { data, error } = await supabase.rpc(
           "admin_time_entries_billed_totals_range",
@@ -801,29 +604,36 @@ export default function EmployeesTable({
           return;
         }
 
-        const map: Record<string, Worked> = {};
+        const map: Record<string, Worked> = Object.fromEntries(
+          employeeIds.map((id) => [
+            String(id),
+            { ...WORKED_ZERO, weeksMonth: monthWeeks, weeksRange: rangeWeeks },
+          ]),
+        );
+
         for (const row of data ?? []) {
-          map[String((row as any).profile_id)] = {
-            ...WORKED_ZERO,
+          const id = String((row as any).profile_id);
+          map[id] = {
+            ...map[id],
             rangeMin: Number((row as any).billed_range_min ?? 0),
             rangeInternalMin: Number(
               (row as any).billed_range_internal_min ?? 0,
             ),
-            weeksRange: Number((row as any).weeks_in_range ?? 0),
+            weeksRange: Number((row as any).weeks_in_range ?? rangeWeeks),
           };
         }
+
         setWorkedByEmployee(map);
         return;
       }
 
-      // mode défaut 7/30/90 (ton RPC existant)
-      const asOf = ymdLocal(new Date());
+      const asOfISO = ymdLocal(asOf);
 
       const { data, error } = await supabase.rpc(
         "admin_time_entries_billed_totals",
         {
           employee_ids: employeeIds,
-          as_of: asOf,
+          as_of: asOfISO,
         },
       );
 
@@ -832,9 +642,17 @@ export default function EmployeesTable({
         return;
       }
 
-      const map: Record<string, Worked> = {};
+      const map: Record<string, Worked> = Object.fromEntries(
+        employeeIds.map((id) => [
+          String(id),
+          { ...WORKED_ZERO, weeksMonth: monthWeeks },
+        ]),
+      );
+
       for (const row of data ?? []) {
-        map[String((row as any).profile_id)] = {
+        const id = String((row as any).profile_id);
+        map[id] = {
+          ...map[id],
           weekMin: Number((row as any).billed_week_min ?? 0),
           monthMin: Number((row as any).billed_month_min ?? 0),
           m3Min: Number((row as any).billed_3months_min ?? 0),
@@ -843,14 +661,11 @@ export default function EmployeesTable({
           monthInternalMin: Number((row as any).billed_month_internal_min ?? 0),
           m3InternalMin: Number((row as any).billed_3months_internal_min ?? 0),
 
-          weeksMonth: Number((row as any).weeks_in_prev_month ?? 0),
+          weeksMonth: Number((row as any).weeks_in_prev_month ?? monthWeeks),
           weeks3: Number((row as any).weeks_in_prev_3months ?? 0),
-
-          rangeMin: 0,
-          rangeInternalMin: 0,
-          weeksRange: 0,
         };
       }
+
       setWorkedByEmployee(map);
     };
 
@@ -858,7 +673,133 @@ export default function EmployeesTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey, rangeKey, hasCustomRange]);
 
-  /* -------------------------------- Render -------------------------------- */
+  const collator = useMemo(
+    () => new Intl.Collator("fr", { numeric: true, sensitivity: "base" }),
+    [],
+  );
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+
+    arr.sort((a, b) => {
+      const dir = sort.dir === "asc" ? 1 : -1;
+
+      const num = (v: unknown, fallback: number) => toNumber(v) ?? fallback;
+      const txt = (v: unknown) => (v ?? "") as string;
+
+      switch (sort.key) {
+        case "matricule":
+          return dir * collator.compare(txt(a.e.matricule), txt(b.e.matricule));
+
+        case "full_name":
+          return dir * collator.compare(txt(a.e.full_name), txt(b.e.full_name));
+
+        case "availability":
+          return (
+            dir *
+            (num(a.m.remainingQuota, Number.NEGATIVE_INFINITY) -
+              num(b.m.remainingQuota, Number.NEGATIVE_INFINITY))
+          );
+
+        case "real_7": {
+          const quotaA = a.m.quotaMax != null ? (a.m.quotaMax ?? 0) : null;
+          const quotaB = b.m.quotaMax != null ? (b.m.quotaMax ?? 0) : null;
+
+          const wa = getWorked(String(a.e.id));
+          const wb = getWorked(String(b.e.id));
+
+          const billedA = (wa.weekMin + wa.weekInternalMin) / 60;
+          const billedB = (wb.weekMin + wb.weekInternalMin) / 60;
+
+          const remainA =
+            quotaA == null ? Number.POSITIVE_INFINITY : quotaA - billedA;
+          const remainB =
+            quotaB == null ? Number.POSITIVE_INFINITY : quotaB - billedB;
+
+          return dir * (remainA - remainB);
+        }
+
+        case "real_30": {
+          const quotaA = a.m.quotaMax != null ? (a.m.quotaMax ?? 0) : null;
+          const quotaB = b.m.quotaMax != null ? (b.m.quotaMax ?? 0) : null;
+
+          const wa = getWorked(String(a.e.id));
+          const wb = getWorked(String(b.e.id));
+
+          const billedA = (wa.monthMin + wa.monthInternalMin) / 60;
+          const billedB = (wb.monthMin + wb.monthInternalMin) / 60;
+
+          const quotaMonthA =
+            quotaA == null ? null : quotaA * (wa.weeksMonth ?? 0);
+          const quotaMonthB =
+            quotaB == null ? null : quotaB * (wb.weeksMonth ?? 0);
+
+          const remainA =
+            quotaMonthA == null
+              ? Number.POSITIVE_INFINITY
+              : quotaMonthA - billedA;
+          const remainB =
+            quotaMonthB == null
+              ? Number.POSITIVE_INFINITY
+              : quotaMonthB - billedB;
+
+          return dir * (remainA - remainB);
+        }
+
+        case "real_range": {
+          const quotaA = a.m.quotaMax != null ? (a.m.quotaMax ?? 0) : null;
+          const quotaB = b.m.quotaMax != null ? (b.m.quotaMax ?? 0) : null;
+
+          const wa = getWorked(String(a.e.id));
+          const wb = getWorked(String(b.e.id));
+
+          const billedA =
+            ((wa.rangeMin ?? 0) + (wa.rangeInternalMin ?? 0)) / 60;
+          const billedB =
+            ((wb.rangeMin ?? 0) + (wb.rangeInternalMin ?? 0)) / 60;
+
+          const quotaRangeA =
+            quotaA == null ? null : quotaA * (wa.weeksRange ?? 0);
+          const quotaRangeB =
+            quotaB == null ? null : quotaB * (wb.weeksRange ?? 0);
+
+          const remainA =
+            quotaRangeA == null
+              ? Number.POSITIVE_INFINITY
+              : quotaRangeA - billedA;
+          const remainB =
+            quotaRangeB == null
+              ? Number.POSITIVE_INFINITY
+              : quotaRangeB - billedB;
+
+          return dir * (remainA - remainB);
+        }
+
+        default:
+          return 0;
+      }
+    });
+
+    return arr;
+  }, [filtered, sort.key, sort.dir, collator, workedByEmployee]);
+
+  const admins = useMemo(
+    () => sorted.filter(({ e }) => e.is_active && e.role === "admin"),
+    [sorted],
+  );
+  const users = useMemo(
+    () => sorted.filter(({ e }) => e.is_active && e.role !== "admin"),
+    [sorted],
+  );
+  const inactive = useMemo(
+    () => sorted.filter(({ e }) => !e.is_active),
+    [sorted],
+  );
+
+  const nothing =
+    admins.length === 0 && users.length === 0 && inactive.length === 0;
+
+  const colSpan = COLUMNS.length;
 
   return (
     <div className="flex flex-col flex-1">
@@ -868,7 +809,6 @@ export default function EmployeesTable({
         placeholder="Rechercher un employé par nom, courriel, matricule…"
       />
 
-      {/* Filtres & actions */}
       <div className="flex flex-wrap items-center justify-between gap-2 py-3">
         <div className="flex flex-wrap items-center gap-2 px-4">
           <Popover>
@@ -891,7 +831,7 @@ export default function EmployeesTable({
                 defaultMonth={dateRange?.from}
               />
               <div className="px-2 pt-2 text-xs text-muted-foreground">
-                Astuce : appuyer sur une date sélectionner permet de la remettre
+                Astuce : appuyer sur une date sélectionnée permet de la remettre
                 à zéro.
               </div>
             </PopoverContent>
@@ -908,24 +848,20 @@ export default function EmployeesTable({
             </Button>
           )}
         </div>
-
-        {/* (Optionnel) un bouton reset de tes filtres existants */}
-        {/* <Button variant="outline" onClick={clearFilters}>Réinitialiser les filtres</Button> */}
       </div>
 
-      {/* Tableau */}
       <div className="w-full flex-1 flex flex-col gap-4 -mt-px">
         {nothing ? (
           <div className="space-y-3">
             <div className="py-4 text-sm text-muted-foreground">
-              Aucun employé ne correspond aux filtres/recherche.
+              Aucun employé ne correspond à la recherche.
             </div>
           </div>
         ) : (
-          <section className="flex-1 border ">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-sm bg-zinc-300 dark:bg-zinc-800 sticky top-16 h-4 z-5">
+          <div className="border">
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-16 bg-zinc-200 dark:bg-zinc-900 z-10">
+                <tr className="border-b">
                   {COLUMNS.map((col) => (
                     <HeaderCell
                       key={col.id}
@@ -943,63 +879,60 @@ export default function EmployeesTable({
               </thead>
 
               <tbody>
-                {admins.length > 0 && showAdmins && (
+                {admins.length > 0 && (
                   <>
                     <GroupHeader
                       icon={<ShieldUser className="h-4 w-4" />}
                       title="Administrateurs"
                       count={admins.length}
-                      colSpan={COLUMNS.length}
+                      colSpan={colSpan}
                     />
                     {admins.map(({ e, m }) => (
                       <EmployeeRow
-                        key={e.id ?? `${e.full_name}-admin`}
+                        key={e.id}
                         e={e}
                         m={m}
-                        settings={settings}
-                        worked={workedByEmployee[String(e.id)] ?? WORKED_ZERO}
+                        worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
                       />
                     ))}
                   </>
                 )}
 
-                {users.length > 0 && showUsers && (
+                {users.length > 0 && (
                   <>
                     <GroupHeader
                       icon={<UsersRound className="h-4 w-4" />}
                       title="Employés"
                       count={users.length}
-                      colSpan={COLUMNS.length}
+                      colSpan={colSpan}
                     />
                     {users.map(({ e, m }) => (
                       <EmployeeRow
-                        key={e.id ?? `${e.full_name}-user`}
+                        key={e.id}
                         e={e}
                         m={m}
-                        settings={settings}
-                        worked={workedByEmployee[String(e.id)] ?? WORKED_ZERO}
+                        worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
                       />
                     ))}
                   </>
                 )}
 
-                {inactive.length > 0 && showInactive && (
+                {inactive.length > 0 && (
                   <>
                     <GroupHeader
                       icon={<Moon className="h-4 w-4" />}
                       title="Inactifs"
                       count={inactive.length}
-                      colSpan={COLUMNS.length}
+                      colSpan={colSpan}
                     />
                     {inactive.map(({ e, m }) => (
                       <EmployeeRow
-                        key={e.id ?? `${e.full_name}-inactive`}
+                        key={e.id}
                         e={e}
                         m={m}
-                        settings={settings}
-                        worked={workedByEmployee[String(e.id)] ?? WORKED_ZERO}
+                        worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
                       />
                     ))}
@@ -1007,7 +940,7 @@ export default function EmployeesTable({
                 )}
               </tbody>
             </table>
-          </section>
+          </div>
         )}
       </div>
     </div>

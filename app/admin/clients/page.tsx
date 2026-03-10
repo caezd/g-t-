@@ -66,6 +66,7 @@ import {
   ArrowDown,
   X,
   CornerDownRight,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   format,
@@ -92,21 +93,19 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { toHoursDecimal, formatHoursHuman } from "@/utils/date";
 import { translateMandatCode } from "@/utils/codes";
+import * as XLSX from "xlsx";
 
 function previousMonthRange() {
   const prev = subMonths(new Date(), 1);
   return { from: startOfMonth(prev), to: endOfMonth(prev) };
 }
 function previousCompletedWeekRange(now = new Date()) {
-  // semaine dim->sam (weekStartsOn: 0). Change à 1 si tu veux lun->dim.
   const startThisWeek = startOfWeek(now, { weekStartsOn: 0 });
-  const from = subWeeks(startThisWeek, 1); // dimanche de la semaine précédente
-  const to = endOfDay(subDays(startThisWeek, 1)); // samedi dernier (fin de journée)
+  const from = subWeeks(startThisWeek, 1);
+  const to = endOfDay(subDays(startThisWeek, 1));
   return { from, to };
 }
-// ------------------------
-// Helpers quota_max
-// ------------------------
+
 function decimalToHhMm(dec: number | null | undefined): string {
   if (dec == null || !Number.isFinite(dec)) return "";
   const total = Math.round(dec * 60);
@@ -121,7 +120,7 @@ function canonicalizeQuotaInput(raw: string): string {
   const s = (raw ?? "").trim();
   if (s === "") return "";
   const dec = toHoursDecimal(s);
-  if (!Number.isFinite(dec)) return raw; // laisse l'erreur au validateur
+  if (!Number.isFinite(dec)) return raw;
   return decimalToHhMm(dec);
 }
 
@@ -132,8 +131,20 @@ function formatDateCA(d: Date): string {
   return `${dd}-${mm}-${yyyy}`;
 }
 
+function formatDecimalHours(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value)) return 0;
+  return Number(value.toFixed(2)); // garde 2 décimales max
+}
+
 function formatRangeCA(from: Date, to: Date): string {
   return `du ${formatDateCA(from)} au ${formatDateCA(to)}`;
+}
+
+function makeExportFilename(realRange?: DateRange) {
+  if (realRange?.from && realRange?.to) {
+    return `clients_${formatDateCA(realRange.from)}_au_${formatDateCA(realRange.to)}.xlsx`;
+  }
+  return `clients_export_${format(new Date(), "yyyy-MM-dd_HH-mm")}.xlsx`;
 }
 
 function ymdLocal(d: Date): string {
@@ -143,23 +154,18 @@ function ymdLocal(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// Normalise: minuscules + supprime accents + trim
 const norm = (s: unknown) =>
   String(s ?? "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // retire diacritiques
+    .replace(/[\u0300-\u036f]/g, "")
     .trim();
 
-// ------------------------
-// Zod schemas
-// ------------------------
 const MandateSelectionSchema = z.object({
-  id: z.number().optional(), // id pivot si existant (ici, création donc généralement absent)
+  id: z.number().optional(),
   mandat_type_id: z.number(),
   billing_type: z.enum(["hourly", "monthly"]),
   amount: z.number().nonnegative(),
-  // Saisie utilisateur en string (1h30, 1:30, 90m, 1.5)
   quota_max: z
     .string()
     .trim()
@@ -203,7 +209,6 @@ const NewClientDialog = ({
     keyName: "_key",
   });
 
-  // Charger les types de mandat
   useEffect(() => {
     if (!isOpen) return;
     (async () => {
@@ -219,7 +224,6 @@ const NewClientDialog = ({
   const indexOfMandate = (id: number) =>
     mandates.findIndex((m) => m.mandat_type_id === id);
 
-  // Toggle checkbox → ajoute/retire un bloc complet
   const onToggleMandate = (id: number, checked: boolean) => {
     const idx = indexOfMandate(id);
     if (checked && idx === -1) {
@@ -227,7 +231,7 @@ const NewClientDialog = ({
         mandat_type_id: id,
         billing_type: "hourly",
         amount: 0,
-        quota_max: "", // ✅ saisie string, normalisée au blur
+        quota_max: "",
       });
     } else if (!checked && idx !== -1) {
       remove(idx);
@@ -235,7 +239,6 @@ const NewClientDialog = ({
   };
 
   async function onSubmit(values: z.infer<typeof newClientSchema>) {
-    // 1) Créer le client
     const { data: client, error: createErr } = await supabase
       .from("clients")
       .insert({ name: values.name })
@@ -246,7 +249,6 @@ const NewClientDialog = ({
       return;
     }
 
-    // 2) Insérer les liaisons enrichies (table pivot)
     const rows = values.mandates.map((m) => {
       const qDec = toHoursDecimal(m.quota_max);
       return {
@@ -254,19 +256,17 @@ const NewClientDialog = ({
         mandat_type_id: m.mandat_type_id,
         billing_type: m.billing_type,
         amount: m.amount,
-        quota_max: Number.isFinite(qDec) ? qDec : null, // ✅ en décimal d'heures
+        quota_max: Number.isFinite(qDec) ? qDec : null,
       };
     });
 
     const { error: linkErr } = await supabase
       .from("clients_mandats")
       .insert(rows);
-    if (linkErr) console.log("Erreur liaison mandats:", linkErr); // TODO: toast erreur
+    if (linkErr) console.log("Erreur liaison mandats:", linkErr);
 
-    // 3) Remonter au parent (ex: pour rafraîchir la liste)
     onCreated?.({ ...client, mandate_count: values.mandates.length });
 
-    // 4) Reset + fermer
     form.reset({ name: "", mandates: [] });
     setIsOpen(false);
   }
@@ -292,7 +292,6 @@ const NewClientDialog = ({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-8">
-            {/* Nom */}
             <FormField
               control={form.control}
               name="name"
@@ -307,7 +306,6 @@ const NewClientDialog = ({
               )}
             />
 
-            {/* Liste des mandats disponibles (checkbox toggle) */}
             <FormItem>
               <FormLabel>Mandats disponibles</FormLabel>
               <div className="mt-2 grid gap-2 max-h-56 overflow-auto pr-2">
@@ -336,7 +334,6 @@ const NewClientDialog = ({
               </div>
             </FormItem>
 
-            {/* Éditions des mandats sélectionnés */}
             {fields.length > 0 && (
               <div className="grid gap-4">
                 <div className="text-sm font-semibold">
@@ -352,12 +349,10 @@ const NewClientDialog = ({
                       key={field._key}
                       className="rounded-lg border p-4 grid gap-4 md:grid-cols-4"
                     >
-                      {/* Libellé mandat */}
                       <div className="md:col-span-4 -mb-2 text-sm font-medium">
                         {mtype?.description ?? "Mandat"}
                       </div>
 
-                      {/* Type (enum) */}
                       <FormField
                         control={form.control}
                         name={`mandates.${i}.billing_type`}
@@ -383,7 +378,6 @@ const NewClientDialog = ({
                         )}
                       />
 
-                      {/* Montant */}
                       <FormField
                         control={form.control}
                         name={`mandates.${i}.amount`}
@@ -412,7 +406,6 @@ const NewClientDialog = ({
                         )}
                       />
 
-                      {/* Quota max (UI string → décimal DB) */}
                       <FormField
                         control={form.control}
                         name={`mandates.${i}.quota_max`}
@@ -441,7 +434,6 @@ const NewClientDialog = ({
                         )}
                       />
 
-                      {/* Retirer rapidement ce mandat */}
                       <div className="flex items-end">
                         <Button
                           type="button"
@@ -472,14 +464,12 @@ async function softDeleteClient(
   clientId: number,
 ) {
   const now = new Date().toISOString();
-  // 1) soft delete du client
   const { error: e1 } = await supabase
     .from("clients")
     .update({ deleted_at: now })
     .eq("id", clientId);
   if (e1) throw e1;
 
-  // 2) (optionnel) soft delete des mandats encore actifs
   const { error: e2 } = await supabase
     .from("clients_mandats")
     .update({ deleted_at: now })
@@ -618,8 +608,6 @@ const ClientPage = () => {
   const supabase = useMemo(() => createClient(), []);
   const [clients, setClients] = useState<any[]>([]);
   const [q, setQ] = useState("");
-
-  // --- Filtre de plage (Heures réelles) ---
   const [realRange, setRealRange] = useState<DateRange | undefined>(undefined);
   const hasRealRange = Boolean(realRange?.from && realRange?.to);
 
@@ -631,14 +619,15 @@ const ClientPage = () => {
   const [hideArchived, setHideArchived] = useState(true);
   type BillingFilter = "all" | "hourly" | "monthly";
   const [billingFilter, setBillingFilter] = useState<BillingFilter>("all");
+  const [exporting, setExporting] = useState(false);
 
   const columns = useMemo<Column[]>(() => {
     if (!hasRealRange) return COLUMNS as unknown as Column[];
 
     return [
-      COLUMNS[0], // name
-      COLUMNS[1], // quota_week
-      COLUMNS[2], // assigned_hours
+      COLUMNS[0],
+      COLUMNS[1],
+      COLUMNS[2],
       {
         id: "range",
         label: "Heures facturées",
@@ -646,8 +635,8 @@ const ClientPage = () => {
         hint: "Selon les entrées de temps des membres de l'équipe.",
         sortKey: "remainRange",
       },
-      COLUMNS[5], // team  ✅ (au lieu de COLUMNS[6])
-      COLUMNS[6], // actions ✅ (au lieu de COLUMNS[7])
+      COLUMNS[5],
+      COLUMNS[6],
     ];
   }, [hasRealRange, realRangeSubtitle]);
 
@@ -661,17 +650,15 @@ const ClientPage = () => {
 
   const onSortClick = (key: SortKey) => dispatchSort({ key });
 
-  // --- Filtre dates (shadcn Calendar) ---
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(
-    () => startOfWeek(new Date(), { weekStartsOn: 0 }), // 0 = dimanche (dim->sam)
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(() =>
+    startOfWeek(new Date(), { weekStartsOn: 0 }),
   );
 
-  const [dateTo, setDateTo] = useState<Date | undefined>(
-    () => endOfWeek(new Date(), { weekStartsOn: 0 }), // samedi
+  const [dateTo, setDateTo] = useState<Date | undefined>(() =>
+    endOfWeek(new Date(), { weekStartsOn: 0 }),
   );
   const [onlyWithHours, setOnlyWithHours] = useState(false);
 
-  // Map client_id -> total heures
   const [hoursByClientId, setHoursByClientId] = useState<
     Record<string, number>
   >({});
@@ -755,7 +742,6 @@ const ClientPage = () => {
     fetchClients();
   }, [supabase]);
 
-  // --- Heures réelles par client via RPC (pas d'agrégats PostgREST) ---
   useEffect(() => {
     const fetchRealHours = async () => {
       setHoursLoading(true);
@@ -920,14 +906,12 @@ const ClientPage = () => {
         case "remainRange":
           primary = cmpNum(A.remainRangeMin, B.remainRangeMin);
           break;
-
         default:
           primary = 0;
       }
 
       if (primary !== 0) return primary;
 
-      // Tie-breaker stable (toujours par nom asc)
       return String(A.client.name ?? "").localeCompare(
         String(B.client.name ?? ""),
         "fr",
@@ -1016,7 +1000,6 @@ const ClientPage = () => {
     run();
   }, [supabase, clients]);
 
-  // --- Heures facturées sur une plage (RPC) ---
   useEffect(() => {
     const run = async () => {
       if (!hasRealRange || !realRange?.from || !realRange?.to) {
@@ -1119,6 +1102,167 @@ const ClientPage = () => {
     run();
   }, [supabase, clients, hasRealRange, realRange?.from, realRange?.to]);
 
+  const exportToXlsx = () => {
+    try {
+      setExporting(true);
+
+      // === NOUVEAUX FORMATEURS DÉCIMAUX ===
+      const toDecimal = (hours: number) => formatDecimalHours(hours);
+      const toDecimalMin = (minutes: number) =>
+        formatDecimalHours(minutes / 60);
+
+      const rows: Record<string, string | number>[] = [];
+
+      for (const { client } of sortedClients) {
+        const assignedHours = Array.isArray(client.clients_team)
+          ? client.clients_team.reduce((acc: number, row: any) => {
+              const v = Number(row?.quota_max ?? 0);
+              return acc + (Number.isFinite(v) ? v : 0);
+            }, 0)
+          : 0;
+
+        const quotaWeekHours = client.mandats
+          ? client.mandats.reduce(
+              (acc: number, mandat: any) => acc + (mandat.quota_max || 0),
+              0,
+            )
+          : 0;
+
+        const quotaWeekMin = Math.round(quotaWeekHours * 60);
+        const comp = completedByClientId[String(client.id)] ?? {
+          weekMin: 0,
+          monthMin: 0,
+          m3Min: 0,
+          weeksMonth: 0,
+          weeks3: 0,
+        };
+
+        const quotaMonthMin = quotaWeekMin * comp.weeksMonth;
+        const remainWeekMin = quotaWeekMin - comp.weekMin;
+        const remainMonthMin = quotaMonthMin - comp.monthMin;
+
+        const range = rangeByClientId[String(client.id)] ?? {
+          rangeMin: 0,
+          weeksRange: 0,
+        };
+        const quotaRangeMin = quotaWeekMin * (range.weeksRange ?? 0);
+        const remainRangeMin = quotaRangeMin - (range.rangeMin ?? 0);
+
+        const baseClient = {
+          Type: "Client",
+          Client: client.name ?? "",
+          Mandat: "",
+          Prévision: toDecimal(quotaWeekHours),
+          Assigné: toDecimal(assignedHours),
+          Équipe: Number(client.membersCount ?? 0),
+        };
+
+        if (hasRealRange) {
+          rows.push({
+            ...baseClient,
+            [realRangeSubtitle || "Plage"]: toDecimalMin(remainRangeMin),
+            "Plage - fait": toDecimalMin(range.rangeMin),
+            "Plage - quota": toDecimalMin(quotaRangeMin),
+          });
+        } else {
+          rows.push({
+            ...baseClient,
+            "7 derniers jours": toDecimalMin(remainWeekMin),
+            "7 derniers jours - fait": toDecimalMin(comp.weekMin),
+            "7 derniers jours - quota": toDecimalMin(quotaWeekMin),
+            "30 derniers jours": toDecimalMin(remainMonthMin),
+            "30 derniers jours - fait": toDecimalMin(comp.monthMin),
+            "30 derniers jours - quota": toDecimalMin(quotaMonthMin),
+          });
+        }
+
+        // ==================== LIGNES MANDATS ====================
+        for (const m of client.mandats ?? []) {
+          const mandatId = String(m.id);
+          const k = `${String(client.id)}:${mandatId}`;
+          const mandatCode = m?.mandat_types?.code ?? null;
+          const mandatLabel =
+            mandatCode != null
+              ? translateMandatCode(mandatCode)
+              : `Mandat #${mandatId}`;
+
+          const quotaWeekMandatMin = Math.round(Number(m.quota_max ?? 0) * 60);
+          const quotaMonthMandatMin =
+            quotaWeekMandatMin * (comp.weeksMonth ?? 0);
+          const assignedMandatHours = (client.clients_team ?? [])
+            .filter((r: any) => String(r.mandat_id) === mandatId)
+            .reduce(
+              (acc: number, r: any) => acc + (Number(r.quota_max ?? 0) || 0),
+              0,
+            );
+
+          const billed = completedByMandatKey[k] ?? {
+            weekMin: 0,
+            monthMin: 0,
+            m3Min: 0,
+          };
+          const billedRangeMin = rangeByMandatKey[k]?.rangeMin ?? 0;
+
+          const remainWeekMandatMin = quotaWeekMandatMin - billed.weekMin;
+          const remainMonthMandatMin = quotaMonthMandatMin - billed.monthMin;
+          const quotaRangeMandatMin =
+            quotaWeekMandatMin * (range.weeksRange ?? 0);
+          const remainRangeMandatMin = quotaRangeMandatMin - billedRangeMin;
+
+          const baseMandat = {
+            Type: "Mandat",
+            Client: client.name ?? "",
+            Mandat: mandatLabel,
+            Prévision: toDecimal(quotaWeekMandatMin / 60),
+            Assigné: toDecimal(assignedMandatHours),
+            Équipe: "",
+          };
+
+          if (hasRealRange) {
+            rows.push({
+              ...baseMandat,
+              [realRangeSubtitle || "Plage"]:
+                toDecimalMin(remainRangeMandatMin),
+              "Plage - fait": toDecimalMin(billedRangeMin),
+              "Plage - quota": toDecimalMin(quotaRangeMandatMin),
+            });
+          } else {
+            rows.push({
+              ...baseMandat,
+              "7 derniers jours": toDecimalMin(remainWeekMandatMin),
+              "7 derniers jours - fait": toDecimalMin(billed.weekMin),
+              "7 derniers jours - quota": toDecimalMin(quotaWeekMandatMin),
+              "30 derniers jours": toDecimalMin(remainMonthMandatMin),
+              "30 derniers jours - fait": toDecimalMin(billed.monthMin),
+              "30 derniers jours - quota": toDecimalMin(quotaMonthMandatMin),
+            });
+          }
+        }
+      }
+
+      // ====================== CRÉATION DU FICHIER ======================
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Clients");
+
+      // Ajustement automatique des largeurs de colonnes
+      const headers = Object.keys(rows[0] ?? {});
+      worksheet["!cols"] = headers.map((header) => ({
+        wch:
+          Math.max(
+            header.length,
+            ...rows.map((row) => String(row[header] ?? "").length),
+          ) + 2,
+      }));
+
+      XLSX.writeFile(workbook, makeExportFilename(realRange));
+    } catch (error) {
+      console.error("xlsx export error", error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <>
       <div className="flex flex-col flex-1">
@@ -1129,7 +1273,17 @@ const ClientPage = () => {
                 Gestion des clients
               </h1>
             </div>
-            <div className="flex mt-4 md:mt-0 md:ml-4">
+            <div className="flex mt-4 md:mt-0 md:ml-4 gap-2">
+              <Button
+                variant="outline"
+                onClick={exportToXlsx}
+                disabled={exporting || sortedClients.length === 0}
+              >
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                {exporting
+                  ? "Export en cours..."
+                  : "Extraire les données (.xlsx)"}
+              </Button>
               <NewClientDialog
                 onCreated={(client) => setClients((prev) => [...prev, client])}
               />
@@ -1275,7 +1429,6 @@ const ClientPage = () => {
                           )
                         : 0;
 
-                      // quota semaine en minutes (entier)
                       const quotaWeekMin = Math.round(quotaWeekHours * 60);
 
                       const comp = completedByClientId[String(client.id)] ?? {
@@ -1351,7 +1504,7 @@ const ClientPage = () => {
                                   ? "text-red-600 dark:text-red-300 font-medium"
                                   : quotaWeek - assignedHours > 0
                                     ? "text-green-600 dark:text-green-300 font-medium"
-                                    : null, // = 0 => aucune classe de couleur
+                                    : null,
                               )}
                             >
                               {formatHoursHuman(assignedHours)}
@@ -1362,23 +1515,7 @@ const ClientPage = () => {
                                   "py-2 px-4",
                                   cellClass(remainRangeMin),
                                 )}
-                              >
-                                {/*rangeLoading ? (
-                                  <span className="text-muted-foreground">
-                                    …
-                                  </span>
-                                ) : (
-                                  <div className="leading-tight">
-                                    <div>
-                                      {fmtMin(remainRangeMin)} disponibles
-                                    </div>
-                                    <div className="text-xs text-muted-foreground font-normal">
-                                      fait: {fmtMin(range.rangeMin)} / quota:{" "}
-                                      {fmtMin(quotaRangeMin)}
-                                    </div>
-                                  </div>
-                                )*/}
-                              </td>
+                              />
                             ) : (
                               <>
                                 <td
@@ -1386,51 +1523,18 @@ const ClientPage = () => {
                                     "py-2 px-4",
                                     cellClass(remainWeekMin),
                                   )}
-                                >
-                                  {/*completedLoading ? (
-                                    <span className="text-muted-foreground">
-                                      …
-                                    </span>
-                                  ) : (
-                                    <div className="leading-tight">
-                                      <div>
-                                        {fmtMin(remainWeekMin)} disponibles
-                                      </div>
-                                      <div className="text-xs text-muted-foreground font-normal">
-                                        fait: {fmtMin(comp.weekMin)} / quota:{" "}
-                                        {fmtMin(quotaWeekMin)}
-                                      </div>
-                                    </div>
-                                  )*/}
-                                </td>
+                                />
 
                                 <td
                                   className={cn(
                                     "py-2 px-4",
                                     cellClass(remainMonthMin),
                                   )}
-                                >
-                                  {/*completedLoading ? (
-                                    <span className="text-muted-foreground">
-                                      …
-                                    </span>
-                                  ) : (
-                                    <div className="leading-tight">
-                                      <div>
-                                        {fmtMin(remainMonthMin)} disponibles
-                                      </div>
-                                      <div className="text-xs text-muted-foreground font-normal">
-                                        fait: {fmtMin(comp.monthMin)} / quota:{" "}
-                                        {fmtMin(quotaMonthMin)}
-                                      </div>
-                                    </div>
-                                  )*/}
-                                </td>
+                                />
                               </>
                             )}
 
                             <td className="py-2 px-4">
-                              {/* ton HoverCard existant inchangé */}
                               {client.membersCount > 0 ? (
                                 <HoverCard>
                                   <HoverCardTrigger asChild>
@@ -1520,12 +1624,10 @@ const ClientPage = () => {
                               </AlertDialog>
                             </td>
                           </tr>
-                          {/* sous-lignes mandats */}
                           {(client.mandats ?? []).map((m: any) => {
                             const mandatId = String(m.id);
                             const k = `${String(client.id)}:${mandatId}`;
 
-                            // Quota mandat (par semaine) -> minutes
                             const quotaWeekMin = Math.round(
                               Number(m.quota_max ?? 0) * 60,
                             );
@@ -1534,7 +1636,6 @@ const ClientPage = () => {
                             const quotaM3Min =
                               quotaWeekMin * (comp.weeks3 ?? 0);
 
-                            // Heures PLACÉES (assignées) sur ce mandat (clients_team)
                             const assignedMandatHours = (
                               client.clients_team ?? []
                             )
@@ -1550,7 +1651,6 @@ const ClientPage = () => {
                               assignedMandatHours * 60,
                             );
 
-                            // Heures FACTURÉES (time_entries) sur ce mandat
                             const billed = completedByMandatKey[k] ?? {
                               weekMin: 0,
                               monthMin: 0,
@@ -1559,13 +1659,12 @@ const ClientPage = () => {
                             const billedRangeMin =
                               rangeByMandatKey[k]?.rangeMin ?? 0;
 
-                            // Restant (quota - facturé)
                             const remainWeekMin = quotaWeekMin - billed.weekMin;
                             const remainMonthMin =
                               quotaMonthMin - billed.monthMin;
                             const remainM3Min = quotaM3Min - billed.m3Min;
 
-                            const weeksRange = range.weeksRange ?? 0; // vient déjà de ton RPC range client
+                            const weeksRange = range.weeksRange ?? 0;
                             const quotaRangeMin = quotaWeekMin * weeksRange;
                             const remainRangeMin =
                               quotaRangeMin - billedRangeMin;
@@ -1581,7 +1680,6 @@ const ClientPage = () => {
                                 key={`${String(client.id)}:${mandatId}`}
                                 className={cn("text-xs", stripeBg)}
                               >
-                                {/* Nom */}
                                 <td className="py-2 px-4">
                                   <div className="pl-6 text-muted-foreground flex items-center gap-2">
                                     <CornerDownRight
@@ -1592,15 +1690,12 @@ const ClientPage = () => {
                                   </div>
                                 </td>
 
-                                {/* Prévision (quota/semaine) */}
                                 <td className="py-2 px-4">
                                   {formatHoursHuman(quotaWeekMin / 60)}
                                 </td>
 
-                                {/* Assigné (placé/semaine) */}
                                 <td className="py-2 px-4"></td>
 
-                                {/* Heures réelles (facturé) */}
                                 {hasRealRange ? (
                                   <td
                                     className={cn(
@@ -1658,7 +1753,7 @@ const ClientPage = () => {
                                         >
                                           <div className="leading-tight">
                                             <div>
-                                              {fmtMin(remainWeekMin)}{" "}
+                                              {fmtMin(remainWeekMin)}
                                               disponibles
                                             </div>
                                             <div className="text-xs text-muted-foreground font-normal">
@@ -1689,7 +1784,7 @@ const ClientPage = () => {
                                         >
                                           <div className="leading-tight">
                                             <div>
-                                              {fmtMin(remainMonthMin)}{" "}
+                                              {fmtMin(remainMonthMin)}
                                               disponibles
                                             </div>
                                             <div className="text-xs text-muted-foreground font-normal">
@@ -1703,10 +1798,8 @@ const ClientPage = () => {
                                   </>
                                 )}
 
-                                {/* Nb membres (facultatif) */}
                                 <td className="py-2 px-4 text-muted-foreground"></td>
 
-                                {/* Actions */}
                                 <td className="py-2 px-4" />
                               </tr>
                             );

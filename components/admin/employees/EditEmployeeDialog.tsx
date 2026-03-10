@@ -243,7 +243,7 @@ export default function EditEmployeeDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 px-6 py-4">
+          <ScrollArea className="flex-1 px-6 py-4 min-h-0">
             <div className="grid gap-4">
               {/* Nom complet */}
               <div className="grid gap-2">
@@ -353,7 +353,7 @@ export default function EditEmployeeDialog({
               </div>
 
               {/* --- Quotas par client (clients_team) --- */}
-              <div className="grid gap-3">
+              <div className="grid gap-3 overflow-auto max-h-80">
                 <div className="flex items-center justify-between">
                   <Label>Quotas par client</Label>
                   <Badge variant="secondary">{clients.length}</Badge>

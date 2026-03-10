@@ -243,15 +243,22 @@ export default function HomePage() {
         data: { user },
       } = await supabase.auth.getUser();
 
+      const today = new Date();
+      const currentWeekStart = startOfWeekSunday(today);
+      const fourWeeksStart = new Date(currentWeekStart);
+      fourWeeksStart.setDate(fourWeeksStart.getDate() - 21); // semaine courante + 3 précédentes
+
+      const cutoff = fourWeeksStart.toISOString().slice(0, 10);
+
       const { data, error } = await supabase
         .from("time_entries")
         .select(
           "*, client:clients(*), mandat:clients_mandats(*, mandat_types(*)), clients_services(*)",
         )
         .eq("profile_id", user.id)
+        .gte("doc", cutoff)
         .order("doc", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(100);
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       setEntries(data || []);

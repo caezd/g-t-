@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import * as XLSX from "xlsx";
 import type { DateRange } from "react-day-picker";
 import { createClient } from "@/lib/supabase/client";
 
@@ -34,6 +35,7 @@ import {
   ChevronRight,
   CornerDownRight,
   Users,
+  FileSpreadsheet,
 } from "lucide-react";
 import Hint from "@/components/hint";
 import { Badge } from "@/components/ui/badge";
@@ -166,6 +168,18 @@ function fmtMinsToHours(mins: number) {
   return fmtHours(mins / 60);
 }
 
+function formatDecimalHours(h: number): number {
+  return Number.isFinite(h) ? Number(h.toFixed(2)) : 0;
+}
+
+function formatDecimalMoney(n: number): number {
+  return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+}
+
+function makeBibleExportFilename(fromYMD: string, toYMD: string) {
+  return `bible_${fromYMD}_au_${toYMD}.xlsx`;
+}
+
 function profitClass(p: number) {
   if (p > 0) return "text-emerald-700";
   if (p < 0) return "text-red-700";
@@ -246,6 +260,7 @@ export default function BibleClient({
 
   const [loading, setLoading] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [exporting, setExporting] = React.useState(false);
 
   const [filters, setFilters] = React.useState(() => ({
     fromYMD: initialFromYMD,
@@ -670,6 +685,198 @@ export default function BibleClient({
     };
   }, [data]);
 
+  /* export xlsx */
+  const exportToXlsx = () => {
+    try {
+      setExporting(true);
+
+      const rows: Record<string, string | number>[] = [];
+
+      const social = totals.socialCharge;
+
+      for (const c of data.clients) {
+        const cid = String(c.id);
+        const mandats = c.clients_mandats ?? [];
+        const team = c.clients_team ?? [];
+
+        const mandatQuotaH = mandats.reduce(
+          (acc, m) => acc + safeNum(m.quota_max, 0),
+          0,
+        );
+        const teamQuotaH = team.reduce(
+          (acc, t) => acc + safeNum(t.quota_max, 0),
+          0,
+        );
+
+        const clientWith = safeNum(data.minsByClient[cid] ?? 0);
+        const clientHors = safeNum(data.minsByClientHorsMandat[cid] ?? 0);
+        const clientTotal = clientWith + clientHors;
+
+        let clientBaseCost = 0;
+        for (const [k, mins] of Object.entries(data.minsByClientEmployee)) {
+          if (!k.startsWith(`${cid}|`)) continue;
+          const eid = k.split("|")[1];
+          const rate = safeNum(data.employeeInfoById[eid]?.rate ?? 0);
+          if (rate > 0) clientBaseCost += (mins / 60) * rate;
+        }
+        for (const [k, mins] of Object.entries(
+          data.minsByClientEmployeeHorsMandat,
+        )) {
+          if (!k.startsWith(`${cid}|`)) continue;
+          const eid = k.split("|")[1];
+          const rate = safeNum(data.employeeInfoById[eid]?.rate ?? 0);
+          if (rate > 0) clientBaseCost += (mins / 60) * rate;
+        }
+        const clientCost = clientBaseCost > 0 ? clientBaseCost * social : 0;
+
+        let clientIntrant = 0;
+        for (const m of mandats) {
+          const mMins = safeNum(data.minsByMandat[String(m.id)] ?? 0);
+          clientIntrant += intrantForMandat(
+            mMins,
+            String(m.billing_type ?? ""),
+            safeNum(m.amount, 0),
+          );
+        }
+        const clientProfit = clientIntrant - clientCost;
+
+        // === LIGNE CLIENT ===
+        rows.push({
+          Type: "Client",
+          Client: c.name ?? "",
+          Détail: "",
+          "Assigné (h)": formatDecimalHours(mandatQuotaH),
+          "Réel (h)": formatDecimalHours(clientTotal),
+          Taux: clientRateSummary(mandats as any),
+          "Coûtant ($)": formatDecimalMoney(clientCost),
+          "Intrant ($)": formatDecimalMoney(clientIntrant),
+          "Profit ($)": formatDecimalMoney(clientProfit),
+        });
+
+        // === LIGNES MANDATS ===
+        for (const m of mandats) {
+          const mMins = safeNum(data.minsByMandat[String(m.id)] ?? 0);
+          let mandatBaseCost = 0;
+          for (const [k, mins] of Object.entries(data.minsByMandatEmployee)) {
+            if (!k.startsWith(`${m.id}|`)) continue;
+            const eid = k.split("|")[1];
+            const rate = safeNum(data.employeeInfoById[eid]?.rate ?? 0);
+            if (rate > 0) mandatBaseCost += (mins / 60) * rate;
+          }
+          const mandatCost = mandatBaseCost > 0 ? mandatBaseCost * social : 0;
+          const mandatIntrant = intrantForMandat(
+            mMins,
+            String(m.billing_type ?? ""),
+            safeNum(m.amount, 0),
+          );
+          const mandatProfit = mandatIntrant - mandatCost;
+
+          rows.push({
+            Type: "Mandat",
+            Client: c.name ?? "",
+            Détail: m.type?.description ?? "Mandat",
+            "Assigné (h)": formatDecimalHours(safeNum(m.quota_max, 0)),
+            "Réel (h)": formatDecimalHours(mMins / 60),
+            Taux:
+              String(m.billing_type ?? "").toLowerCase() === "monthly"
+                ? `${safeNum(m.amount)} $/mois`
+                : `${safeNum(m.amount)} $/h`,
+            "Coûtant ($)": formatDecimalMoney(mandatCost),
+            "Intrant ($)": formatDecimalMoney(mandatIntrant),
+            "Profit ($)": formatDecimalMoney(mandatProfit),
+          });
+        }
+
+        // === HORS MANDAT ===
+        if (clientHors > 0) {
+          const horsRows = Object.entries(data.minsByClientEmployeeHorsMandat)
+            .filter(([k]) => k.startsWith(`${cid}|`))
+            .map(([k, mins]) => {
+              const eid = k.split("|")[1];
+              const info = data.employeeInfoById[eid];
+              const hours = mins / 60;
+              const rate = safeNum(info?.rate ?? 0);
+              const base = rate > 0 ? hours * rate : 0;
+              return {
+                name: info?.full_name ?? eid,
+                hours,
+                cost: base * social,
+              };
+            });
+
+          const horsCost = horsRows.reduce((acc, r) => acc + r.cost, 0);
+
+          rows.push({
+            Type: "Hors mandat",
+            Client: c.name ?? "",
+            Détail: "Total hors mandats",
+            "Assigné (h)": "",
+            "Réel (h)": formatDecimalHours(clientHors / 60),
+            Taux: "",
+            "Coûtant ($)": formatDecimalMoney(horsCost),
+            "Intrant ($)": 0,
+            "Profit ($)": formatDecimalMoney(-horsCost),
+          });
+        }
+
+        // === LIGNES ÉQUIPE ===
+        const teamSorted = [...team].sort(
+          (a, b) => roleWeight(a.role) - roleWeight(b.role),
+        );
+        for (const t of teamSorted) {
+          const pid = t.profile?.id;
+          const rate = safeNum(
+            (pid ? data.employeeInfoById[pid]?.rate : null) ??
+              t.profile?.rate ??
+              0,
+          );
+          const withM = pid
+            ? safeNum(data.minsByClientEmployee[`${cid}|${pid}`] ?? 0)
+            : 0;
+          const horsM = pid
+            ? safeNum(data.minsByClientEmployeeHorsMandat[`${cid}|${pid}`] ?? 0)
+            : 0;
+          const totalM = withM + horsM;
+
+          const cost = rate > 0 ? (totalM / 60) * rate * social : 0;
+
+          rows.push({
+            Type: "Employé",
+            Client: c.name ?? "",
+            Détail: `${t.profile?.full_name ?? `Employé #${t.user_id}`} (${ROLE_LABEL[t.role ?? ""]})`,
+            "Assigné (h)": formatDecimalHours(safeNum(t.quota_max, 0)),
+            "Réel (h)": formatDecimalHours(totalM / 60),
+            Taux: rate > 0 ? `${formatDecimalMoney(rate)} $/h` : "",
+            "Coûtant ($)": formatDecimalMoney(cost),
+            "Intrant ($)": "",
+            "Profit ($)": "",
+          });
+        }
+      }
+
+      // ====================== CRÉATION DU FICHIER ======================
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Bible");
+
+      // Ajustement auto des largeurs
+      const headers = Object.keys(rows[0] ?? {});
+      worksheet["!cols"] = headers.map((h) => ({
+        wch:
+          Math.max(h.length, ...rows.map((r) => String(r[h] ?? "").length)) + 2,
+      }));
+
+      XLSX.writeFile(
+        workbook,
+        makeBibleExportFilename(data.fromYMD, data.toYMD),
+      );
+    } catch (err) {
+      console.error("Export XLSX erreur :", err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col flex-1">
       {/* Toolbar */}
@@ -740,7 +947,14 @@ export default function BibleClient({
         </div>
 
         <div className="text-xs text-muted-foreground">
-          {data.aggRowsCount.toLocaleString("fr-CA")} entrée(s) agrégée(s)
+          <Button
+            variant="outline"
+            onClick={exportToXlsx}
+            disabled={exporting || data.clients.length === 0}
+          >
+            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            {exporting ? "Export en cours..." : "Extraire les données (.xlsx)"}
+          </Button>
         </div>
       </div>
 

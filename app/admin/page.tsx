@@ -24,12 +24,12 @@ function isValidYMD(s?: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s.trim());
 }
 
-export default function Page({
+export default async function Page({
   searchParams,
 }: {
   searchParams?: { from?: string; to?: string; q?: string };
 }) {
-  const sp = searchParams ?? {};
+  const sp = (await searchParams) ?? {};
   const def = previousCompletedMonthBoundsUTC();
 
   const from = isValidYMD(sp.from) ? (sp.from as string) : def.startYMD;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useReducer, useEffect } from "react";
+import { useMemo, useState, useReducer, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import type { DateRange } from "react-day-picker";
 
@@ -28,7 +28,9 @@ import {
   ArrowUp,
   ArrowDown,
   Calendar as CalendarIcon,
+  FileDown,
   X,
+  ChevronRight,
 } from "lucide-react";
 
 import { type Employee } from "@/components/admin/employees/EditEmployeeDialog";
@@ -153,6 +155,11 @@ function prevMonthWeeks(asOf: Date) {
   end.setDate(0); // dernier jour du mois précédent
 
   return weeksSpanned(start, end);
+}
+
+function roundHours(value: number | null): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value * 100) / 100;
 }
 
 /* -------------------------------- Metrics -------------------------------- */
@@ -316,11 +323,15 @@ function EmployeeRow({
   m,
   worked,
   hasCustomRange,
+  isOpen,
+  onToggle,
 }: {
   e: DecoratedEmployee["e"];
   m: Metrics;
   worked: Worked;
   hasCustomRange: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
 }) {
   const quotaEffectifMax = m.quotaMax != null ? (m.quotaMax ?? 0) : null;
   const remainingEffectif = m.quotaMax != null ? (m.remainingQuota ?? 0) : null;
@@ -328,7 +339,7 @@ function EmployeeRow({
   const displayRemainingHours = remainingEffectif;
   const quotaWeek = m.quotaMax != null ? (m.quotaMax ?? 0) : null;
 
-  // ✅ “Facturé” inclut les heures internes (même si on n'affiche plus les colonnes internes)
+  // TOTAL (affiché dans la ligne principale – comme avant)
   const billedWeekH = (worked.weekMin + worked.weekInternalMin) / 60;
   const billedMonthH = (worked.monthMin + worked.monthInternalMin) / 60;
   const billedRangeH =
@@ -336,13 +347,22 @@ function EmployeeRow({
 
   const quotaMonth =
     quotaWeek != null ? quotaWeek * (worked.weeksMonth ?? 0) : null;
-
   const remainWeek = quotaWeek != null ? quotaWeek - billedWeekH : null;
   const remainMonth = quotaMonth != null ? quotaMonth - billedMonthH : null;
 
   const quotaRange =
     quotaWeek != null ? quotaWeek * (worked.weeksRange ?? 0) : null;
   const remainRange = quotaRange != null ? quotaRange - billedRangeH : null;
+
+  // DÉTAIL EXTERNE / INTERNE (heures facturées clients vs internes)
+  const externalWeekH = worked.weekMin / 60;
+  const internalWeekH = worked.weekInternalMin / 60;
+
+  const externalMonthH = worked.monthMin / 60;
+  const internalMonthH = worked.monthInternalMin / 60;
+
+  const externalRangeH = (worked.rangeMin ?? 0) / 60;
+  const internalRangeH = (worked.rangeInternalMin ?? 0) / 60;
 
   const realCellClass = (v: number | null) =>
     cn(
@@ -355,36 +375,56 @@ function EmployeeRow({
     );
 
   return (
-    <tr className="border-b text-sm last:border-b-0">
-      <td className="px-4 py-2">
-        <div className="font-medium truncate">
-          <Link className="underline" href={`/admin/employees/${e.id}`}>
-            {(e as any).full_name ?? "—"}
-          </Link>
-        </div>
-        <div className="text-zinc-600 dark:text-zinc-500 truncate">
-          {(e as any).email ?? "—"}
-        </div>
-      </td>
+    <>
+      {/* ==================== LIGNE PRINCIPALE ==================== */}
+      <tr className="border-b text-sm last:border-b-0 hover:bg-muted/50">
+        <td className="px-4 py-2">
+          <button
+            type="button"
+            onClick={onToggle}
+            className="group flex w-full items-center gap-2 text-left rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-expanded={isOpen}
+          >
+            <ChevronRight
+              className={cn(
+                "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                isOpen && "rotate-90",
+              )}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="font-medium truncate">
+                <Link
+                  className="underline"
+                  href={`/admin/employees/${e.id}`}
+                  onClick={(ev) => ev.stopPropagation()}
+                >
+                  {(e as any).full_name ?? "—"}
+                </Link>
+              </div>
+              <div className="text-zinc-600 dark:text-zinc-500 truncate">
+                {(e as any).email ?? "—"}
+              </div>
+            </div>
+          </button>
+        </td>
 
-      <td
-        className={cn(
-          "px-4 py-2 flex flex-col justify-center",
-          m.quotaMax != null
-            ? (remainingEffectif ?? 0) <= 0
-              ? "text-red-600 dark:text-red-400 font-medium"
-              : "text-green-600 dark:text-green-400 font-medium"
-            : "text-muted-foreground",
-        )}
-      >
-        {displayRemainingHours != null && (
-          <span>{formatHoursHuman(displayRemainingHours)} disponibles</span>
-        )}
-        sur {formatHoursHuman(quotaEffectifMax)}
-      </td>
+        <td
+          className={cn(
+            "px-4 py-2 flex flex-col justify-center",
+            m.quotaMax != null
+              ? (remainingEffectif ?? 0) <= 0
+                ? "text-red-600 dark:text-red-400 font-medium"
+                : "text-green-600 dark:text-green-400 font-medium"
+              : "text-muted-foreground",
+          )}
+        >
+          {displayRemainingHours != null && (
+            <span>{formatHoursHuman(displayRemainingHours)} disponibles</span>
+          )}
+          sur {formatHoursHuman(quotaEffectifMax)}
+        </td>
 
-      {hasCustomRange ? (
-        <>
+        {hasCustomRange ? (
           <td className={realCellClass(remainRange)}>
             {remainRange == null ? (
               "Illimité"
@@ -398,43 +438,98 @@ function EmployeeRow({
               </div>
             )}
           </td>
-        </>
-      ) : (
-        <>
-          <td className={realCellClass(remainWeek)}>
-            {remainWeek == null ? (
-              "Illimité"
-            ) : (
-              <div className="leading-tight">
-                <div>{formatHoursHuman(remainWeek)} disponibles</div>
-                <div className="text-xs text-muted-foreground font-normal">
-                  fait: {formatHoursHuman(billedWeekH)} / quota:{" "}
-                  {formatHoursHuman(quotaWeek ?? 0)}
+        ) : (
+          <>
+            <td className={realCellClass(remainWeek)}>
+              {remainWeek == null ? (
+                "Illimité"
+              ) : (
+                <div className="leading-tight">
+                  <div>{formatHoursHuman(remainWeek)} disponibles</div>
+                  <div className="text-xs text-muted-foreground font-normal">
+                    fait: {formatHoursHuman(billedWeekH)} / quota:{" "}
+                    {formatHoursHuman(quotaWeek ?? 0)}
+                  </div>
                 </div>
-              </div>
-            )}
-          </td>
+              )}
+            </td>
 
-          <td className={realCellClass(remainMonth)}>
-            {remainMonth == null ? (
-              "Illimité"
-            ) : (
-              <div className="leading-tight">
-                <div>{formatHoursHuman(remainMonth)} disponibles</div>
-                <div className="text-xs text-muted-foreground font-normal">
-                  fait: {formatHoursHuman(billedMonthH)} / quota:{" "}
-                  {formatHoursHuman(quotaMonth ?? 0)}
+            <td className={realCellClass(remainMonth)}>
+              {remainMonth == null ? (
+                "Illimité"
+              ) : (
+                <div className="leading-tight">
+                  <div>{formatHoursHuman(remainMonth)} disponibles</div>
+                  <div className="text-xs text-muted-foreground font-normal">
+                    fait: {formatHoursHuman(billedMonthH)} / quota:{" "}
+                    {formatHoursHuman(quotaMonth ?? 0)}
+                  </div>
                 </div>
-              </div>
+              )}
+            </td>
+          </>
+        )}
+
+        <td className="text-right px-4 py-2">
+          <EditEmployeeDialog employee={e} />
+        </td>
+      </tr>
+
+      {/* ==================== LIGNES DÉTAIL (ACCORDION) ==================== */}
+      {isOpen && (
+        <>
+          {/* Facturé clients (externe) */}
+          <tr className="bg-emerald-50/70 dark:bg-emerald-950/30 border-b text-sm">
+            <td className="pl-12 py-3 text-emerald-700 dark:text-emerald-400 font-medium">
+              → Facturé clients
+            </td>
+            <td className="px-4 py-3 text-muted-foreground">—</td>
+
+            {hasCustomRange ? (
+              <td className="p-4 font-medium text-emerald-700 dark:text-emerald-400">
+                {formatHoursHuman(externalRangeH)}
+              </td>
+            ) : (
+              <>
+                <td className="p-4 font-medium text-emerald-700 dark:text-emerald-400">
+                  {formatHoursHuman(externalWeekH)}
+                </td>
+                <td className="p-4 font-medium text-emerald-700 dark:text-emerald-400">
+                  {formatHoursHuman(externalMonthH)}
+                </td>
+              </>
             )}
-          </td>
+
+            <td />
+          </tr>
+
+          {/* Heures internes */}
+          <tr className="bg-amber-50/70 dark:bg-amber-950/40 border-b text-sm last:border-b-0">
+            <td className="pl-12 py-3 text-amber-700 dark:text-amber-400 font-medium">
+              → Heures internes
+            </td>
+            <td className="px-4 py-3 text-muted-foreground">—</td>
+
+            {hasCustomRange ? (
+              <td className="p-4 font-medium text-amber-700 dark:text-amber-400">
+                {formatHoursHuman(internalRangeH)}
+              </td>
+            ) : (
+              <>
+                <td className="p-4 font-medium text-amber-700 dark:text-amber-400">
+                  {formatHoursHuman(internalWeekH)}
+                </td>
+                <td className="p-4 font-medium text-amber-700 dark:text-amber-400">
+                  {formatHoursHuman(internalMonthH)}
+                </td>
+              </>
+            )}
+
+            <td />
+          </tr>
         </>
       )}
-
-      <td className="text-right px-4 py-2">
-        <EditEmployeeDialog employee={e} />
-      </td>
-    </tr>
+    </>
   );
 }
 
@@ -452,9 +547,23 @@ export default function EmployeesTable({
     : [];
 
   const [q, setQ] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [isLoadingWorked, setIsLoadingWorked] = useState(false);
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const hasCustomRange = Boolean(dateRange?.from && dateRange?.to);
+
+  // ==================== ACCORDION STATE ====================
+  const [openEmployees, setOpenEmployees] = useState<Set<string>>(new Set());
+
+  const toggleEmployee = useCallback((id: string) => {
+    setOpenEmployees((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const rangeSubtitle = useMemo(() => {
     if (!dateRange?.from || !dateRange?.to) return "";
@@ -544,17 +653,14 @@ export default function EmployeesTable({
     [searched, settings],
   );
 
-  // ✅ pas de filtres additionnels : tous les employés du select restent affichés
   const filtered = useMemo(() => decorated, [decorated]);
 
-  // ✅ IMPORTANT: workedByEmployee DOIT être déclaré avant tout tri qui l'utilise
   const [workedByEmployee, setWorkedByEmployee] = useState<
     Record<string, Worked>
   >({});
 
   const getWorked = (id: string) => workedByEmployee[id] ?? WORKED_ZERO;
 
-  // ids stables (évite de relancer les RPC si le tri change)
   const employeeIds = useMemo(
     () => filtered.map(({ e }) => String(e.id)),
     [filtered],
@@ -572,10 +678,12 @@ export default function EmployeesTable({
 
   useEffect(() => {
     const supabase = createClient();
+    let cancelled = false;
 
     const run = async () => {
+      setIsLoadingWorked(true);
       if (!employeeIds.length) {
-        setWorkedByEmployee({});
+        if (!cancelled) setWorkedByEmployee({});
         return;
       }
 
@@ -623,7 +731,7 @@ export default function EmployeesTable({
           };
         }
 
-        setWorkedByEmployee(map);
+        if (!cancelled) setWorkedByEmployee(map);
         return;
       }
 
@@ -666,12 +774,127 @@ export default function EmployeesTable({
         };
       }
 
-      setWorkedByEmployee(map);
+      if (!cancelled) setWorkedByEmployee(map);
     };
 
-    run();
+    run().finally(() => {
+      if (!cancelled) setIsLoadingWorked(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey, rangeKey, hasCustomRange]);
+
+  const exportEmployeesExcel = async () => {
+    if (!sorted.length || isExporting) return;
+
+    setIsExporting(true);
+
+    try {
+      const XLSX = await import("xlsx");
+      const supabase = createClient();
+      const asOf = new Date();
+      const asOfISO = ymdLocal(asOf);
+      const monthWeeksFallback = prevMonthWeeks(asOf);
+      const ids = sorted.map(({ e }) => String(e.id));
+
+      const { data, error } = await supabase.rpc(
+        "admin_time_entries_billed_totals",
+        {
+          employee_ids: ids,
+          as_of: asOfISO,
+        },
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      const exportWorkedByEmployee: Record<string, Worked> = Object.fromEntries(
+        ids.map((id) => [
+          id,
+          { ...WORKED_ZERO, weeksMonth: monthWeeksFallback },
+        ]),
+      );
+
+      for (const row of data ?? []) {
+        const id = String((row as any).profile_id);
+        exportWorkedByEmployee[id] = {
+          ...exportWorkedByEmployee[id],
+          weekMin: Number((row as any).billed_week_min ?? 0),
+          monthMin: Number((row as any).billed_month_min ?? 0),
+          m3Min: Number((row as any).billed_3months_min ?? 0),
+          weekInternalMin: Number((row as any).billed_week_internal_min ?? 0),
+          monthInternalMin: Number((row as any).billed_month_internal_min ?? 0),
+          m3InternalMin: Number((row as any).billed_3months_internal_min ?? 0),
+          weeksMonth: Number(
+            (row as any).weeks_in_prev_month ?? monthWeeksFallback,
+          ),
+          weeks3: Number((row as any).weeks_in_prev_3months ?? 0),
+        };
+      }
+
+      const rows = sorted.map(({ e, m }) => {
+        const worked = exportWorkedByEmployee[String(e.id)] ?? {
+          ...WORKED_ZERO,
+          weeksMonth: monthWeeksFallback,
+        };
+
+        const quotaWeek = m.quotaMax != null ? Number(m.quotaMax ?? 0) : null;
+
+        const workedWeekH = (worked.weekMin + worked.weekInternalMin) / 60;
+        const quotaMonthH =
+          quotaWeek != null
+            ? quotaWeek * (worked.weeksMonth ?? monthWeeksFallback)
+            : null;
+        const workedMonthH = (worked.monthMin + worked.monthInternalMin) / 60;
+
+        const remainingWeekH =
+          quotaWeek != null ? quotaWeek - workedWeekH : null;
+        const remainingMonthH =
+          quotaMonthH != null ? quotaMonthH - workedMonthH : null;
+
+        return {
+          Nom: (e as any).full_name ?? "",
+          Courriel: (e as any).email ?? "",
+
+          "Semaine dernière - travaillé (h)": roundHours(workedWeekH) ?? 0,
+          "Semaine dernière - restant (h)":
+            roundHours(remainingWeekH) ?? "Illimité",
+          "Semaine dernière - quota (h)": roundHours(quotaWeek) ?? "Illimité",
+          "Mois dernier - travaillé (h)": roundHours(workedMonthH) ?? 0,
+          "Mois dernier - restant (h)":
+            roundHours(remainingMonthH) ?? "Illimité",
+          "Mois dernier - quota (h)": roundHours(quotaMonthH) ?? "Illimité",
+        };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+
+      worksheet["!cols"] = [
+        { wch: 28 }, // Nom
+        { wch: 32 }, // Courriel
+        { wch: 24 },
+        { wch: 24 },
+        { wch: 22 },
+        { wch: 22 },
+        { wch: 22 },
+        { wch: 20 },
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Employés");
+
+      XLSX.writeFile(workbook, `employes-${asOfISO}.xlsx`);
+    } catch (error) {
+      console.error("export employees excel error", error);
+      window.alert("Impossible d’exporter le fichier Excel.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const collator = useMemo(
     () => new Intl.Collator("fr", { numeric: true, sensitivity: "base" }),
@@ -848,6 +1071,17 @@ export default function EmployeesTable({
             </Button>
           )}
         </div>
+        <div className="px-4">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={exportEmployeesExcel}
+            disabled={isExporting || isLoadingWorked || sorted.length === 0}
+          >
+            <FileDown className="h-4 w-4" />
+            {isExporting ? "Extraction…" : "Extraire les données (.xlsx)"}
+          </Button>
+        </div>
       </div>
 
       <div className="w-full flex-1 flex flex-col gap-4 -mt-px">
@@ -894,6 +1128,8 @@ export default function EmployeesTable({
                         m={m}
                         worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
+                        isOpen={openEmployees.has(String(e.id))}
+                        onToggle={() => toggleEmployee(String(e.id))}
                       />
                     ))}
                   </>
@@ -914,6 +1150,8 @@ export default function EmployeesTable({
                         m={m}
                         worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
+                        isOpen={openEmployees.has(String(e.id))}
+                        onToggle={() => toggleEmployee(String(e.id))}
                       />
                     ))}
                   </>
@@ -934,6 +1172,8 @@ export default function EmployeesTable({
                         m={m}
                         worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
+                        isOpen={openEmployees.has(String(e.id))}
+                        onToggle={() => toggleEmployee(String(e.id))}
                       />
                     ))}
                   </>

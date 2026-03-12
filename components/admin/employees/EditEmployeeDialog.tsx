@@ -167,11 +167,13 @@ export default function EditEmployeeDialog({
   }, [open, employee.id, supabase]);
 
   // Helpers
-  function parseNumberOrNaN(v: string) {
-    if (v.trim() === "") return Number.NaN;
-    const n = Number(v.replace(",", "."));
-    return Number.isFinite(n) ? n : Number.NaN;
+  function parseNumberInput(value: string): number | null {
+    if (!value || value.trim() === "") return null;
+    const normalized = value.trim().replace(",", ".");
+    const num = Number(normalized);
+    return Number.isFinite(num) && num >= 0 ? num : null;
   }
+
   function setClientQuota(client_id: string, value: number | null) {
     setClients((prev) =>
       prev.map((c) =>
@@ -315,19 +317,20 @@ export default function EditEmployeeDialog({
                   <Label htmlFor="quota_max">Quota max (heures/s)</Label>
                   <Input
                     id="quota_max"
+                    type="number"
+                    step="any"
                     inputMode="decimal"
-                    defaultValue={
+                    lang="fr-CA"
+                    value={
                       Number.isFinite(form.getValues("quota_max") as number)
-                        ? String(form.getValues("quota_max"))
+                        ? form.getValues("quota_max")
                         : ""
                     }
                     onChange={(e) =>
                       form.setValue(
                         "quota_max",
-                        parseNumberOrNaN(e.target.value),
-                        {
-                          shouldDirty: true,
-                        },
+                        parseNumberInput(e.target.value) ?? (Number.NaN as any),
+                        { shouldDirty: true },
                       )
                     }
                   />
@@ -337,16 +340,21 @@ export default function EditEmployeeDialog({
                   <Label htmlFor="rate">Taux horaire</Label>
                   <Input
                     id="rate"
+                    type="number"
+                    step="any"
                     inputMode="decimal"
-                    defaultValue={
+                    lang="fr-CA"
+                    value={
                       Number.isFinite(form.getValues("rate") as number)
-                        ? String(form.getValues("rate"))
+                        ? form.getValues("rate")
                         : ""
                     }
                     onChange={(e) =>
-                      form.setValue("rate", parseNumberOrNaN(e.target.value), {
-                        shouldDirty: true,
-                      })
+                      form.setValue(
+                        "rate",
+                        parseNumberInput(e.target.value) ?? (Number.NaN as any),
+                        { shouldDirty: true },
+                      )
                     }
                   />
                 </div>
@@ -382,21 +390,16 @@ export default function EditEmployeeDialog({
 
                         <div className="flex items-center gap-2">
                           <Input
+                            type="number"
+                            step="any"
                             inputMode="decimal"
+                            lang="fr-CA"
                             placeholder="Illimité"
                             className="text-right min-w-20"
-                            value={
-                              c.quota_max != null ? String(c.quota_max) : ""
-                            }
+                            value={c.quota_max != null ? c.quota_max : ""}
                             onChange={(e) => {
-                              const v = e.target.value.trim();
-                              if (v === "")
-                                return setClientQuota(c.client_id, null);
-                              const n = Number(v.replace(",", "."));
-                              setClientQuota(
-                                c.client_id,
-                                Number.isFinite(n) ? n : null,
-                              );
+                              const parsed = parseNumberInput(e.target.value);
+                              setClientQuota(c.client_id, parsed);
                             }}
                           />
                           <span className="text-sm text-muted-foreground">

@@ -14,6 +14,7 @@ import {
   Home,
   BookMarked,
   FileChartLine,
+  Group,
 } from "lucide-react";
 
 const links = [
@@ -21,6 +22,7 @@ const links = [
   { name: "Activité", href: "/admin/activities", icon: Radio },
   { name: "Employés", href: "/admin/employees", icon: Users },
   { name: "Clients", href: "/admin/clients", icon: FolderClosed },
+  { name: "Équipes", href: "/admin/teams", icon: Group },
   { name: "Rapports", href: "/admin/reports", icon: FileChartLine },
   { name: "Services", href: "/admin/services", icon: FolderCheck },
   { name: "Paramètres", href: "/admin/settings", icon: Settings },

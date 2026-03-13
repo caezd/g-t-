@@ -3,13 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import TeamsKanbanClient from "@/components/teams/TeamsKanbanClient";
 
 export default async function Page() {
-    const supabase = await createClient();
-    const { user } = await supabase.auth.getUser().then(({ data }) => data);
+  const supabase = await createClient();
+  const { user } = await supabase.auth.getUser().then(({ data }) => data);
 
-    const { data, error } = await supabase
-        .from("clients_team")
-        .select(
-            `
+  const { data, error } = await supabase
+    .from("clients_team")
+    .select(
+      `
             role,
             client:clients (
                 id,
@@ -25,15 +25,15 @@ export default async function Page() {
                     id, role, billed_amount, doc, mandat_id
                 )
             )
-            `
-        )
-        .eq("user_id", user.id)
-        .is("clients.unassigned_time_entries.mandat_id", null, {
-            referencedTable: "clients.time_entries",
-        })
-        .is("clients.clients_mandats.deleted_at", null);
+            `,
+    )
+    .eq("user_id", user?.id)
+    .is("clients.unassigned_time_entries.mandat_id", null, {
+      referencedTable: "clients.time_entries",
+    })
+    .is("clients.clients_mandats.deleted_at", null);
 
-    if (error) throw error;
+  if (error) throw error;
 
-    return <TeamsKanbanClient rows={data ?? []} />;
+  return <TeamsKanbanClient rows={data ?? []} />;
 }

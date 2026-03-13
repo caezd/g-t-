@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 
 import { type Employee } from "@/components/admin/employees/EditEmployeeDialog";
+import { EmployeeTimeEntriesDialog } from "@/components/admin/employees/EmployeeTimeEntriesDialog";
 import { formatHoursHuman } from "@/utils/date";
 
 /* ------------------------------ Types & consts ----------------------------- */
@@ -160,6 +161,23 @@ function prevMonthWeeks(asOf: Date) {
 function roundHours(value: number | null): number | null {
   if (value == null || !Number.isFinite(value)) return null;
   return Math.round(value * 100) / 100;
+}
+
+function previousCompletedWeekRange(now = new Date()) {
+  const startThisWeek = startOfWeekSunday(now);
+  const from = new Date(startThisWeek);
+  from.setDate(from.getDate() - 7);
+
+  const to = new Date(startThisWeek);
+  to.setMilliseconds(to.getMilliseconds() - 1);
+
+  return { from, to };
+}
+
+function previousMonthRange(now = new Date()) {
+  const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const to = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+  return { from, to };
 }
 
 /* -------------------------------- Metrics -------------------------------- */
@@ -323,6 +341,7 @@ function EmployeeRow({
   m,
   worked,
   hasCustomRange,
+  dateRange,
   isOpen,
   onToggle,
 }: {
@@ -330,6 +349,7 @@ function EmployeeRow({
   m: Metrics;
   worked: Worked;
   hasCustomRange: boolean;
+  dateRange?: DateRange;
   isOpen: boolean;
   onToggle: () => void;
 }) {
@@ -374,6 +394,16 @@ function EmployeeRow({
           : "text-green-600 dark:text-green-400 font-medium",
     );
 
+  const employeeLabel =
+    (e as any).full_name ?? (e as any).email ?? `Employé #${String(e.id)}`;
+
+  const customRange =
+    hasCustomRange && dateRange?.from && dateRange?.to
+      ? { from: dateRange.from, to: dateRange.to }
+      : undefined;
+
+  const triggerClass =
+    "w-full text-left underline cursor-pointer focus:outline-none";
   return (
     <>
       {/* ==================== LIGNE PRINCIPALE ==================== */}
@@ -487,15 +517,43 @@ function EmployeeRow({
 
             {hasCustomRange ? (
               <td className="p-4 font-medium text-emerald-700 dark:text-emerald-400">
-                {formatHoursHuman(externalRangeH)}
+                <EmployeeTimeEntriesDialog
+                  profileId={e.id}
+                  mode="external"
+                  title={`Entrées de temps — ${employeeLabel} (facturé clients)`}
+                  range={customRange}
+                >
+                  <button type="button" className={triggerClass}>
+                    {formatHoursHuman(externalRangeH)}
+                  </button>
+                </EmployeeTimeEntriesDialog>
               </td>
             ) : (
               <>
                 <td className="p-4 font-medium text-emerald-700 dark:text-emerald-400">
-                  {formatHoursHuman(externalWeekH)}
+                  <EmployeeTimeEntriesDialog
+                    profileId={e.id}
+                    mode="external"
+                    title={`Entrées de temps — ${employeeLabel} (facturé clients, semaine précédente complétée)`}
+                    range={previousCompletedWeekRange()}
+                  >
+                    <button type="button" className={triggerClass}>
+                      {formatHoursHuman(externalWeekH)}
+                    </button>
+                  </EmployeeTimeEntriesDialog>
                 </td>
+
                 <td className="p-4 font-medium text-emerald-700 dark:text-emerald-400">
-                  {formatHoursHuman(externalMonthH)}
+                  <EmployeeTimeEntriesDialog
+                    profileId={e.id}
+                    mode="external"
+                    title={`Entrées de temps — ${employeeLabel} (facturé clients, mois dernier)`}
+                    range={previousMonthRange()}
+                  >
+                    <button type="button" className={triggerClass}>
+                      {formatHoursHuman(externalMonthH)}
+                    </button>
+                  </EmployeeTimeEntriesDialog>
                 </td>
               </>
             )}
@@ -512,15 +570,43 @@ function EmployeeRow({
 
             {hasCustomRange ? (
               <td className="p-4 font-medium text-amber-700 dark:text-amber-400">
-                {formatHoursHuman(internalRangeH)}
+                <EmployeeTimeEntriesDialog
+                  profileId={e.id}
+                  mode="internal"
+                  title={`Entrées de temps — ${employeeLabel} (interne)`}
+                  range={customRange}
+                >
+                  <button type="button" className={triggerClass}>
+                    {formatHoursHuman(internalRangeH)}
+                  </button>
+                </EmployeeTimeEntriesDialog>
               </td>
             ) : (
               <>
                 <td className="p-4 font-medium text-amber-700 dark:text-amber-400">
-                  {formatHoursHuman(internalWeekH)}
+                  <EmployeeTimeEntriesDialog
+                    profileId={e.id}
+                    mode="internal"
+                    title={`Entrées de temps — ${employeeLabel} (interne, semaine précédente complétée)`}
+                    range={previousCompletedWeekRange()}
+                  >
+                    <button type="button" className={triggerClass}>
+                      {formatHoursHuman(internalWeekH)}
+                    </button>
+                  </EmployeeTimeEntriesDialog>
                 </td>
+
                 <td className="p-4 font-medium text-amber-700 dark:text-amber-400">
-                  {formatHoursHuman(internalMonthH)}
+                  <EmployeeTimeEntriesDialog
+                    profileId={e.id}
+                    mode="internal"
+                    title={`Entrées de temps — ${employeeLabel} (interne, mois dernier)`}
+                    range={previousMonthRange()}
+                  >
+                    <button type="button" className={triggerClass}>
+                      {formatHoursHuman(internalMonthH)}
+                    </button>
+                  </EmployeeTimeEntriesDialog>
                 </td>
               </>
             )}
@@ -1126,6 +1212,7 @@ export default function EmployeesTable({
                         key={e.id}
                         e={e}
                         m={m}
+                        dateRange={dateRange}
                         worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
                         isOpen={openEmployees.has(String(e.id))}
@@ -1148,6 +1235,7 @@ export default function EmployeesTable({
                         key={e.id}
                         e={e}
                         m={m}
+                        dateRange={dateRange}
                         worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
                         isOpen={openEmployees.has(String(e.id))}
@@ -1170,6 +1258,7 @@ export default function EmployeesTable({
                         key={e.id}
                         e={e}
                         m={m}
+                        dateRange={dateRange}
                         worked={getWorked(String(e.id))}
                         hasCustomRange={hasCustomRange}
                         isOpen={openEmployees.has(String(e.id))}

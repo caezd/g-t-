@@ -1753,7 +1753,7 @@ const ClientPage = () => {
                                         >
                                           <div className="leading-tight">
                                             <div>
-                                              {fmtMin(remainWeekMin)}
+                                              {fmtMin(remainWeekMin)}{" "}
                                               disponibles
                                             </div>
                                             <div className="text-xs text-muted-foreground font-normal">
@@ -1784,7 +1784,7 @@ const ClientPage = () => {
                                         >
                                           <div className="leading-tight">
                                             <div>
-                                              {fmtMin(remainMonthMin)}
+                                              {fmtMin(remainMonthMin)}{" "}
                                               disponibles
                                             </div>
                                             <div className="text-xs text-muted-foreground font-normal">

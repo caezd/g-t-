@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowRightLeft } from "lucide-react";
 import {
@@ -60,6 +62,29 @@ export type ClientRow = {
 
 const Roles = ["admin", "user"] as const;
 
+const ADMIN_PERMISSION_OPTIONS = [
+  { key: "admin.bible", label: "Bible", description: "/admin" },
+  {
+    key: "admin.activities",
+    label: "Activité",
+    description: "/admin/activities",
+  },
+  {
+    key: "admin.employees",
+    label: "Employés",
+    description: "/admin/employees",
+  },
+  { key: "admin.clients", label: "Clients", description: "/admin/clients" },
+  { key: "admin.teams", label: "Équipes", description: "/admin/teams" },
+  { key: "admin.reports", label: "Rapports", description: "/admin/reports" },
+  { key: "admin.services", label: "Services", description: "/admin/services" },
+  {
+    key: "admin.settings",
+    label: "Paramètres",
+    description: "/admin/settings",
+  },
+] as const;
+
 const FormSchema = z.object({
   full_name: z.string().min(1, "Nom requis").max(200),
   role: z.enum(Roles).nullable(), // ⬅️ allow null
@@ -88,6 +113,8 @@ export default function EditEmployeeDialog({
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const router = useRouter();
   const supabase = createClient();
 
@@ -110,6 +137,15 @@ export default function EditEmployeeDialog({
     },
     mode: "onChange",
   });
+
+  function togglePermission(permissionKey: string, checked: boolean) {
+    setSelectedPermissions((prev) => {
+      if (checked) {
+        return prev.includes(permissionKey) ? prev : [...prev, permissionKey];
+      }
+      return prev.filter((p) => p !== permissionKey);
+    });
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -166,6 +202,32 @@ export default function EditEmployeeDialog({
     })();
   }, [open, employee.id, supabase]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    (async () => {
+      try {
+        setLoadingPermissions(true);
+
+        const { data, error } = await supabase
+          .from("admin_user_permissions")
+          .select("permission_key")
+          .eq("profile_id", employee.id);
+
+        if (error) throw error;
+
+        setSelectedPermissions((data ?? []).map((row) => row.permission_key));
+      } catch (e: any) {
+        console.error(e);
+        toast.error("Impossible de charger les permissions.", {
+          description: e?.message ?? "Erreur inconnue",
+        });
+      } finally {
+        setLoadingPermissions(false);
+      }
+    })();
+  }, [open, employee.id, supabase]);
+
   // Helpers
   function parseNumberInput(value: string): number | null {
     if (!value || value.trim() === "") return null;
@@ -187,7 +249,6 @@ export default function EditEmployeeDialog({
       // 1) Update du profil
       const payload = {
         full_name: values.full_name,
-        email: values.email, // ⚠️ si email auth.users: gérer via flux supabase auth dédié
         role: values.role,
         is_active: values.is_active,
         quota_max: values.quota_max,
@@ -214,6 +275,30 @@ export default function EditEmployeeDialog({
         if (upsertErr) throw upsertErr;
       }
 
+      // 3) Sync des permissions admin de navigation
+      const managedPermissionKeys = ADMIN_PERMISSION_OPTIONS.map((p) => p.key);
+
+      const { error: deletePermissionsErr } = await supabase
+        .from("admin_user_permissions")
+        .delete()
+        .eq("profile_id", employee.id)
+        .in("permission_key", managedPermissionKeys);
+
+      if (deletePermissionsErr) throw deletePermissionsErr;
+
+      if (selectedPermissions.length > 0) {
+        const inserts = selectedPermissions.map((permission_key) => ({
+          profile_id: employee.id,
+          permission_key,
+        }));
+
+        const { error: insertPermissionsErr } = await supabase
+          .from("admin_user_permissions")
+          .insert(inserts);
+
+        if (insertPermissionsErr) throw insertPermissionsErr;
+      }
+
       toast.success("Employé mis à jour");
       setOpen(false);
       router.refresh();
@@ -233,135 +318,150 @@ export default function EditEmployeeDialog({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="sm:max-w-2xl max-h-[85dvh] p-0 overflow-hidden">
+      <DialogContent className="sm:max-w-3xl max-h-[85dvh] p-0 flex flex-col">
         <form
           onSubmit={form.handleSubmit(onSubmit)}
-          className="flex h-full max-h-[85dvh] flex-col"
+          className="flex flex-1 min-h-0 flex-col"
         >
-          <DialogHeader className="px-6 pt-6">
+          <DialogHeader className="sticky top-0 px-6 pt-6">
             <DialogTitle>Modifier l’employé</DialogTitle>
             <DialogDescription>
               {employee.full_name ?? "—"} · {employee.email ?? "—"}
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 px-6 py-4 min-h-0">
-            <div className="grid gap-4">
-              {/* Nom complet */}
-              <div className="grid gap-2">
-                <Label htmlFor="full_name">Nom complet</Label>
-                <Input
-                  id="full_name"
-                  {...form.register("full_name")}
-                  placeholder="Prénom Nom"
-                />
-                {form.formState.errors.full_name && (
-                  <p className="text-sm text-red-500">
-                    {form.formState.errors.full_name.message}
-                  </p>
-                )}
-              </div>
+          <Tabs
+            defaultValue="profile"
+            className="grid flex-1 min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+          >
+            <div className="px-6 pt-2 shrink-0">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="profile">Profil</TabsTrigger>
+                <TabsTrigger value="clients">Clients</TabsTrigger>
+                <TabsTrigger value="permissions">Permissions</TabsTrigger>
+              </TabsList>
+            </div>
 
-              {/* Rôle & Actif */}
-              <div className="grid grid-cols-2 gap-4">
+            <TabsContent
+              value="profile"
+              className="mt-0 min-h-0 overflow-auto px-6 py-4"
+            >
+              <div className="grid gap-4">
                 <div className="grid gap-2">
-                  <Label>Rôle</Label>
-                  <Select
-                    // Radix wants undefined when there is no selection (not empty string)
-                    value={form.watch("role") ?? undefined}
-                    onValueChange={(v) => {
-                      if (v === "__none__") {
-                        form.setValue("role", null, {
-                          shouldDirty: true,
-                        });
-                      } else {
-                        form.setValue("role", v as any, {
-                          shouldDirty: true,
-                        });
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="—" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* "Effacer" / aucune valeur */}
-                      {Roles.map((r) => (
-                        <SelectItem key={r} value={r}>
-                          {r}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="full_name">Nom complet</Label>
+                  <Input
+                    id="full_name"
+                    {...form.register("full_name")}
+                    placeholder="Prénom Nom"
+                  />
+                  {form.formState.errors.full_name && (
+                    <p className="text-sm text-red-500">
+                      {form.formState.errors.full_name.message}
+                    </p>
+                  )}
                 </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="is_active">Actif</Label>
-                  <div className="h-9 flex items-center justify-between">
-                    <Switch
-                      id="is_active"
-                      checked={form.watch("is_active")}
-                      onCheckedChange={(v) =>
-                        form.setValue("is_active", v, {
-                          shouldDirty: true,
-                        })
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Rôle</Label>
+                    <Select
+                      value={form.watch("role") ?? undefined}
+                      onValueChange={(v) => {
+                        if (v === "__none__") {
+                          form.setValue("role", null, { shouldDirty: true });
+                        } else {
+                          form.setValue("role", v as any, {
+                            shouldDirty: true,
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="—" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Roles.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {r}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="is_active">Actif</Label>
+                    <div className="h-9 flex items-center justify-between">
+                      <Switch
+                        id="is_active"
+                        checked={form.watch("is_active")}
+                        onCheckedChange={(v) =>
+                          form.setValue("is_active", v, {
+                            shouldDirty: true,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="quota_max">Quota max (heures/s)</Label>
+                    <Input
+                      id="quota_max"
+                      type="number"
+                      step="any"
+                      inputMode="decimal"
+                      lang="fr-CA"
+                      value={
+                        Number.isFinite(form.getValues("quota_max") as number)
+                          ? form.getValues("quota_max")
+                          : ""
+                      }
+                      onChange={(e) =>
+                        form.setValue(
+                          "quota_max",
+                          parseNumberInput(e.target.value) ??
+                            (Number.NaN as any),
+                          { shouldDirty: true },
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="rate">Taux horaire</Label>
+                    <Input
+                      id="rate"
+                      type="number"
+                      step="any"
+                      inputMode="decimal"
+                      lang="fr-CA"
+                      value={
+                        Number.isFinite(form.getValues("rate") as number)
+                          ? form.getValues("rate")
+                          : ""
+                      }
+                      onChange={(e) =>
+                        form.setValue(
+                          "rate",
+                          parseNumberInput(e.target.value) ??
+                            (Number.NaN as any),
+                          { shouldDirty: true },
+                        )
                       }
                     />
                   </div>
                 </div>
               </div>
+            </TabsContent>
 
-              {/* Quota & Taux */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="quota_max">Quota max (heures/s)</Label>
-                  <Input
-                    id="quota_max"
-                    type="number"
-                    step="any"
-                    inputMode="decimal"
-                    lang="fr-CA"
-                    value={
-                      Number.isFinite(form.getValues("quota_max") as number)
-                        ? form.getValues("quota_max")
-                        : ""
-                    }
-                    onChange={(e) =>
-                      form.setValue(
-                        "quota_max",
-                        parseNumberInput(e.target.value) ?? (Number.NaN as any),
-                        { shouldDirty: true },
-                      )
-                    }
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="rate">Taux horaire</Label>
-                  <Input
-                    id="rate"
-                    type="number"
-                    step="any"
-                    inputMode="decimal"
-                    lang="fr-CA"
-                    value={
-                      Number.isFinite(form.getValues("rate") as number)
-                        ? form.getValues("rate")
-                        : ""
-                    }
-                    onChange={(e) =>
-                      form.setValue(
-                        "rate",
-                        parseNumberInput(e.target.value) ?? (Number.NaN as any),
-                        { shouldDirty: true },
-                      )
-                    }
-                  />
-                </div>
-              </div>
-
-              {/* --- Quotas par client (clients_team) --- */}
-              <div className="grid gap-3 overflow-auto max-h-80">
+            <TabsContent
+              value="clients"
+              className="mt-0 min-h-0 overflow-auto px-6 py-4"
+            >
+              <div className="grid gap-3">
                 <div className="flex items-center justify-between">
                   <Label>Quotas par client</Label>
                   <Badge variant="secondary">{clients.length}</Badge>
@@ -424,8 +524,89 @@ export default function EditEmployeeDialog({
                     ))}
                 </div>
               </div>
-            </div>
-          </ScrollArea>
+            </TabsContent>
+
+            <TabsContent
+              value="permissions"
+              className="mt-0 min-h-0 overflow-auto px-6 py-4"
+            >
+              <div className="grid gap-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Permissions administratives</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Choisis les pages visibles et accessibles dans l’espace
+                      admin.
+                    </p>
+                  </div>
+
+                  <Badge variant="secondary">
+                    {selectedPermissions.length}
+                  </Badge>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setSelectedPermissions(
+                        ADMIN_PERMISSION_OPTIONS.map((p) => p.key),
+                      )
+                    }
+                  >
+                    Tout cocher
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedPermissions([])}
+                  >
+                    Tout décocher
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border divide-y">
+                  {loadingPermissions && (
+                    <div className="p-3 text-sm text-muted-foreground">
+                      Chargement…
+                    </div>
+                  )}
+
+                  {!loadingPermissions &&
+                    ADMIN_PERMISSION_OPTIONS.map((permission) => {
+                      const checked = selectedPermissions.includes(
+                        permission.key,
+                      );
+
+                      return (
+                        <label
+                          key={permission.key}
+                          className="flex items-start gap-3 p-4 cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(value) =>
+                              togglePermission(permission.key, value === true)
+                            }
+                            className="mt-0.5"
+                          />
+
+                          <div className="grid gap-1">
+                            <div className="text-sm font-medium">
+                              {permission.label}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
 
           <DialogFooter className="border-t px-6 py-4">
             <Button

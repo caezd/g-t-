@@ -1,32 +1,11 @@
 "use client";
+
 import { cn } from "@/lib/utils";
 import { COMPANY_NAME } from "@/utils/constants";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import AppLogo from "@/components/app-logo";
-
-import {
-  FolderCheck,
-  FolderClosed,
-  Radio,
-  Settings,
-  Users,
-  Home,
-  BookMarked,
-  FileChartLine,
-  Group,
-} from "lucide-react";
-
-const links = [
-  { name: "Bible", href: "/admin", icon: BookMarked },
-  { name: "Activité", href: "/admin/activities", icon: Radio },
-  { name: "Employés", href: "/admin/employees", icon: Users },
-  { name: "Clients", href: "/admin/clients", icon: FolderClosed },
-  { name: "Équipes", href: "/admin/teams", icon: Group },
-  { name: "Rapports", href: "/admin/reports", icon: FileChartLine },
-  { name: "Services", href: "/admin/services", icon: FolderCheck },
-  { name: "Paramètres", href: "/admin/settings", icon: Settings },
-];
+import { ADMIN_LINKS } from "@/lib/admin/admin-nav";
 
 const NavLink = ({ name, href, Icon }) => {
   const pathname = usePathname();
@@ -36,6 +15,7 @@ const NavLink = ({ name, href, Icon }) => {
   const classes = cn(
     isActive && "bg-zinc-100 text-accent-400 bg-white/80 dark:text-accent-400",
   );
+
   return (
     <Link
       href={href}
@@ -51,7 +31,15 @@ const NavLink = ({ name, href, Icon }) => {
   );
 };
 
-const AdminAside = () => {
+const AdminAside = ({ allowedPermissions = [], isSuperAdmin = false }) => {
+  const permissionSet = new Set(allowedPermissions);
+
+  const visibleLinks = ADMIN_LINKS.filter(
+    (link) => isSuperAdmin || permissionSet.has(link.permission),
+  );
+
+  if (!visibleLinks.length) return null;
+
   return (
     <aside
       className="hidden xl:flex xl:w-72 xl:z-50 xl:inset-y-0 xl:flex-col shrink-0 bg-accent-400 dark:bg-accent-400/90"
@@ -73,7 +61,7 @@ const AdminAside = () => {
 
         <nav className="flex flex-1 flex-col px-6">
           <ul role="list" className="flex flex-1 flex-col gap-y-2">
-            {links.map((link) => (
+            {visibleLinks.map((link) => (
               <li key={link.name}>
                 <NavLink name={link.name} href={link.href} Icon={link.icon} />
               </li>

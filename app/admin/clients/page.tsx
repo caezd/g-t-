@@ -1586,7 +1586,7 @@ const ClientPage = () => {
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                   <Button variant="destructive" size="sm">
-                                    Supprimer
+                                    Archiver
                                   </Button>
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>

@@ -415,8 +415,8 @@ export default function EditEmployeeDialog({
                       inputMode="decimal"
                       lang="fr-CA"
                       value={
-                        Number.isFinite(form.getValues("quota_max") as number)
-                          ? form.getValues("quota_max")
+                        Number.isFinite(form.watch("quota_max") as number)
+                          ? form.watch("quota_max")
                           : ""
                       }
                       onChange={(e) =>
@@ -439,8 +439,8 @@ export default function EditEmployeeDialog({
                       inputMode="decimal"
                       lang="fr-CA"
                       value={
-                        Number.isFinite(form.getValues("rate") as number)
-                          ? form.getValues("rate")
+                        Number.isFinite(form.watch("rate") as number)
+                          ? form.watch("rate")
                           : ""
                       }
                       onChange={(e) =>

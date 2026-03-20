@@ -53,7 +53,7 @@ type ClientRow = {
     id: number;
     amount: number | null;
     quota_max: number | null;
-    billing_type: "hourly" | "monthly" | string | null;
+    billing_type: "hourly" | "weekly" | string | null;
     type?: { description?: string | null; code?: string | null } | null;
   }> | null;
   clients_team?: Array<{
@@ -193,7 +193,8 @@ function intrantForMandat(
 ) {
   const bt = (billingType ?? "").toLowerCase();
   if (!amount || amount <= 0) return 0;
-  if (bt === "monthly") return amount;
+  // Hebdomadaire : le montant en DB est par semaine, facturé mensuellement (52 semaines / 12 mois)
+  if (bt === "weekly") return amount * (52 / 12);
   return (minsForMandat / 60) * amount;
 }
 
@@ -207,7 +208,7 @@ function roleWeight(role: string | null) {
 
 function clientRateSummary(
   mandats: Array<{
-    billing_type: "hourly" | "monthly";
+    billing_type: "hourly" | "weekly";
     amount: number | string | null;
   }>,
 ) {
@@ -220,11 +221,15 @@ function clientRateSummary(
 
   if (valid.length === 0) return `${all.length} mandat(s)`;
 
-  const monthly = valid.filter((m) => m.billing_type === "monthly");
+  const weekly = valid.filter((m) => m.billing_type === "weekly");
   const hourly = valid.filter((m) => m.billing_type === "hourly");
 
-  const monthlySum = monthly.reduce((acc, m) => acc + m.amountN, 0);
-  const monthlyLabel = monthly.length ? `${fmtMoney(monthlySum)}/mo` : null;
+  // Pour l'affichage, on montre le montant mensuel facturé (semaine × 52/12)
+  const weeklyMonthlySum = weekly.reduce(
+    (acc, m) => acc + m.amountN * (52 / 12),
+    0,
+  );
+  const weeklyLabel = weekly.length ? `${fmtMoney(weeklyMonthlySum)}/mo` : null;
 
   const hourlyRates = hourly.map((m) => m.amountN);
   const uniqueHourly = Array.from(
@@ -240,8 +245,8 @@ function clientRateSummary(
     }
   }
 
-  if (monthlyLabel && hourlyLabel) return `${monthlyLabel} + ${hourlyLabel}`;
-  return hourlyLabel ?? monthlyLabel ?? `${valid.length} mandat(s)`;
+  if (weeklyLabel && hourlyLabel) return `${weeklyLabel} + ${hourlyLabel}`;
+  return hourlyLabel ?? weeklyLabel ?? `${valid.length} mandat(s)`;
 }
 
 export default function BibleClient({
@@ -778,8 +783,8 @@ export default function BibleClient({
             "Assigné (h)": formatDecimalHours(safeNum(m.quota_max, 0)),
             "Réel (h)": formatDecimalHours(mMins / 60),
             Taux:
-              String(m.billing_type ?? "").toLowerCase() === "monthly"
-                ? `${safeNum(m.amount)} $/mois`
+              String(m.billing_type ?? "").toLowerCase() === "weekly"
+                ? `${safeNum(m.amount)} $/sem (${fmtMoney(safeNum(m.amount) * (52 / 12))}/mo)`
                 : `${safeNum(m.amount)} $/h`,
             "Coûtant ($)": formatDecimalMoney(mandatCost),
             "Intrant ($)": formatDecimalMoney(mandatIntrant),
@@ -1202,8 +1207,8 @@ export default function BibleClient({
                           const mandatProfit = mandatIntrant - mandatCost;
 
                           const rateLabel =
-                            bt.toLowerCase() === "monthly"
-                              ? `${fmtMoney(amount)} / mois`
+                            bt.toLowerCase() === "weekly"
+                              ? `${fmtMoney(amount)} / sem`
                               : `${fmtMoney(amount)} / h`;
 
                           return (

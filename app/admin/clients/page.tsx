@@ -164,7 +164,7 @@ const norm = (s: unknown) =>
 const MandateSelectionSchema = z.object({
   id: z.number().optional(),
   mandat_type_id: z.number(),
-  billing_type: z.enum(["hourly", "monthly"]),
+  billing_type: z.enum(["hourly", "weekly"]),
   amount: z.number().nonnegative(),
   quota_max: z
     .string()
@@ -370,7 +370,9 @@ const NewClientDialog = ({
                               </FormControl>
                               <SelectContent>
                                 <SelectItem value="hourly">Hourly</SelectItem>
-                                <SelectItem value="monthly">Monthly</SelectItem>
+                                <SelectItem value="weekly">
+                                  Hebdomadaire
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />

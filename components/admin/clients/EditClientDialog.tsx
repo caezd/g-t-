@@ -76,7 +76,7 @@ export type MandateType = {
 export type Pivot = {
   id: number;
   mandat_type_id: number;
-  billing_type: "hourly" | "monthly";
+  billing_type: "hourly" | "weekly";
   amount: number | null;
   // En DB: quota_max est stocké en décimal (heures). On le manipule en string côté formulaire.
   quota_max: number | null;
@@ -87,7 +87,7 @@ export type Pivot = {
 const RowSchema = z.object({
   id: z.number().optional(),
   mandat_type_id: z.number(),
-  billing_type: z.enum(["hourly", "monthly"]),
+  billing_type: z.enum(["hourly", "weekly"]),
   amount: z.number().nonnegative(),
   // On saisit une string (1h30, 1:30, 90m, 1.5, etc.)
   quota_max: z
@@ -532,8 +532,12 @@ export function EditClientDialog({
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="hourly">Hourly</SelectItem>
-                                <SelectItem value="monthly">Monthly</SelectItem>
+                                <SelectItem value="hourly">
+                                  À l'heure
+                                </SelectItem>
+                                <SelectItem value="weekly">
+                                  Hebdomadaire
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />

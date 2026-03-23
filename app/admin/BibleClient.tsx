@@ -190,12 +190,52 @@ function intrantForMandat(
   minsForMandat: number,
   billingType: string,
   amount: number,
+  fromYMD: string,
+  toYMD: string,
 ) {
   const bt = (billingType ?? "").toLowerCase();
   if (!amount || amount <= 0) return 0;
-  // Hebdomadaire : le montant en DB est par semaine, facturé mensuellement (52 semaines / 12 mois)
-  if (bt === "weekly") return amount * (52 / 12);
+  // Hebdomadaire : le montant en DB est par semaine, proportionnel à la plage sélectionnée
+  if (bt === "weekly") {
+    const from = parseYMDToLocalDate(fromYMD);
+    const to = parseYMDToLocalDate(toYMD);
+    const days = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24) + 1;
+    return amount * (days / 7);
+  }
   return (minsForMandat / 60) * amount;
+}
+
+/*
+Priorité explicite : si un mandat est taggé "hors mandat", on l'utilise comme avant.
+Fallback à un seul mandat : si aucun mandat explicite n'existe ET qu'il y a exactement un mandat de type hourly avec un montant valide, son taux est appliqué aux time_entries hors mandat. */
+function getHorsMandatRate(
+  mandats: ClientRow["clients_mandats"],
+): number | null {
+  const all = mandats ?? [];
+
+  // 1. Chercher un mandat explicitement taggé "hors mandat"
+  const explicit = all.find(
+    (m) =>
+      (m.type?.description ?? "").toLowerCase().includes("hors mandat") ||
+      (m.type?.code ?? "").toLowerCase().includes("hors"),
+  );
+  if (explicit) {
+    const amount = safeNum(explicit.amount, 0);
+    return amount > 0 ? amount : null;
+  }
+
+  // 2. Fallback : s'il n'existe qu'un seul mandat horaire, utiliser son taux
+  //    pour facturer les entrées de temps sans mandat (mandat_id null)
+  const hourlyMandats = all.filter(
+    (m) =>
+      (m.billing_type ?? "").toLowerCase() === "hourly" &&
+      safeNum(m.amount, 0) > 0,
+  );
+  if (hourlyMandats.length === 1) {
+    return safeNum(hourlyMandats[0].amount, 0);
+  }
+
+  return null;
 }
 
 function roleWeight(role: string | null) {
@@ -224,12 +264,9 @@ function clientRateSummary(
   const weekly = valid.filter((m) => m.billing_type === "weekly");
   const hourly = valid.filter((m) => m.billing_type === "hourly");
 
-  // Pour l'affichage, on montre le montant mensuel facturé (semaine × 52/12)
-  const weeklyMonthlySum = weekly.reduce(
-    (acc, m) => acc + m.amountN * (52 / 12),
-    0,
-  );
-  const weeklyLabel = weekly.length ? `${fmtMoney(weeklyMonthlySum)}/mo` : null;
+  // Pour l'affichage, on montre le montant par semaine (tel qu'en DB)
+  const weeklySum = weekly.reduce((acc, m) => acc + m.amountN, 0);
+  const weeklyLabel = weekly.length ? `${fmtMoney(weeklySum)}/sem` : null;
 
   const hourlyRates = hourly.map((m) => m.amountN);
   const uniqueHourly = Array.from(
@@ -658,7 +695,19 @@ export default function BibleClient({
           mins,
           String(m.billing_type ?? ""),
           safeNum(m.amount, 0),
+          data.fromYMD,
+          data.toYMD,
         );
+      }
+
+      // Intrant des heures null facturées au taux du mandat "hors mandat"
+      const horsRate = getHorsMandatRate(c.clients_mandats);
+      if (horsRate) {
+        const horsClientMins = safeNum(
+          data.minsByClientHorsMandat[String(c.id)] ?? 0,
+          0,
+        );
+        totalIntrant += (horsClientMins / 60) * horsRate;
       }
     }
 
@@ -741,6 +790,8 @@ export default function BibleClient({
             mMins,
             String(m.billing_type ?? ""),
             safeNum(m.amount, 0),
+            data.fromYMD,
+            data.toYMD,
           );
         }
         const clientProfit = clientIntrant - clientCost;
@@ -773,6 +824,8 @@ export default function BibleClient({
             mMins,
             String(m.billing_type ?? ""),
             safeNum(m.amount, 0),
+            data.fromYMD,
+            data.toYMD,
           );
           const mandatProfit = mandatIntrant - mandatCost;
 
@@ -784,7 +837,7 @@ export default function BibleClient({
             "Réel (h)": formatDecimalHours(mMins / 60),
             Taux:
               String(m.billing_type ?? "").toLowerCase() === "weekly"
-                ? `${safeNum(m.amount)} $/sem (${fmtMoney(safeNum(m.amount) * (52 / 12))}/mo)`
+                ? `${safeNum(m.amount)} $/sem`
                 : `${safeNum(m.amount)} $/h`,
             "Coûtant ($)": formatDecimalMoney(mandatCost),
             "Intrant ($)": formatDecimalMoney(mandatIntrant),
@@ -809,6 +862,10 @@ export default function BibleClient({
               };
             });
 
+          const horsExportRate = getHorsMandatRate(mandats);
+          const horsExportIntrant = horsExportRate
+            ? (clientHors / 60) * horsExportRate
+            : 0;
           const horsCost = horsRows.reduce((acc, r) => acc + r.cost, 0);
 
           rows.push({
@@ -817,10 +874,12 @@ export default function BibleClient({
             Détail: "Total hors mandats",
             "Assigné (h)": "",
             "Réel (h)": formatDecimalHours(clientHors / 60),
-            Taux: "",
+            Taux: horsExportRate
+              ? `${formatDecimalMoney(horsExportRate)} $/h`
+              : "",
             "Coûtant ($)": formatDecimalMoney(horsCost),
-            "Intrant ($)": 0,
-            "Profit ($)": formatDecimalMoney(-horsCost),
+            "Intrant ($)": formatDecimalMoney(horsExportIntrant),
+            "Profit ($)": formatDecimalMoney(horsExportIntrant - horsCost),
           });
         }
 
@@ -1055,8 +1114,14 @@ export default function BibleClient({
                     mMins,
                     String(m.billing_type ?? ""),
                     safeNum(m.amount, 0),
+                    data.fromYMD,
+                    data.toYMD,
                   );
                 }
+
+                const horsRate = getHorsMandatRate(mandats);
+                const horsIntrant = horsRate ? (clientHors / 60) * horsRate : 0;
+                clientIntrant += horsIntrant;
 
                 const clientProfit = clientIntrant - clientCost;
 
@@ -1094,7 +1159,7 @@ export default function BibleClient({
                   (acc, r) => acc + (r.cost_with_social || 0),
                   0,
                 );
-                const horsProfit = 0 - horsCost;
+                const horsProfit = horsIntrant - horsCost;
 
                 return (
                   <React.Fragment key={String(c.id)}>
@@ -1203,6 +1268,8 @@ export default function BibleClient({
                             mMins,
                             bt,
                             amount,
+                            data.fromYMD,
+                            data.toYMD,
                           );
                           const mandatProfit = mandatIntrant - mandatCost;
 
@@ -1282,7 +1349,7 @@ export default function BibleClient({
                             </TableCell>
 
                             <TableCell className="text-sm text-red-700">
-                              —
+                              {horsRate ? `${fmtMoney(horsRate)}/h` : "—"}
                             </TableCell>
 
                             <TableCell className="text-sm font-medium text-red-700">
@@ -1354,8 +1421,8 @@ export default function BibleClient({
                               )}
                             </TableCell>
 
-                            <TableCell className="text-sm text-red-700">
-                              —
+                            <TableCell className="text-sm font-medium">
+                              {horsIntrant > 0 ? fmtMoney(horsIntrant) : "—"}
                             </TableCell>
 
                             <TableCell
